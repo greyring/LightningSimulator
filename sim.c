@@ -87,34 +87,36 @@ static void discharge(graph_t *g, int index, int charge) {
 
 static void simulate_one(graph_t *g) {
     int power = g->power;
-    double total, prob;
+    double prob;
     int num_choice;
     int adj, idx;
     
     while (power > 0) {
         update_charge(g);
-        total = 0.0;
         num_choice = 0;
         for (int i = 0; i < g->height; i++) {
             for (int j = 0; j < g->width; j++) {
-                if ((adj = adjacent_pos(g, i, j)) != -1) {
-                    idx = i * g->width + j;
-                    if (g->charge[idx] == 0)
+                idx = i * g->width + j;
+                if (g->charge[idx] == 0)
                         continue;
-                    g->path[idx] = adj;
+                if ((adj = adjacent_pos(g, i, j)) != -1) {
                     prob = pow(g->charge[idx], g->eta);
-                    g->choice_probs[num_choice] = prob;
+                    if (num_choice == 0)
+                        g->choice_probs[num_choice] = prob;
+                    else
+                        g->choice_probs[num_choice] = g->choice_probs[num_choice - 1] + prob;
                     g->choice_idxs[num_choice] = idx;
                     num_choice++;
-                    total += prob;
                 }
             }
         }
 
         if (num_choice != 0) {
-            double breach = (double)rand()/RAND_MAX * total;
+            double breach = (double)rand()/RAND_MAX * g->choice_probs[num_choice - 1];
             int choice = locate_value(breach, g->choice_probs, num_choice);
             int choice_idx = g->choice_idxs[choice];
+            int adj = adjacent_pos(g, choice_idx / g->width, choice_idx % g->width);
+            g->path[choice_idx] = adj;
             if (g->bolt[choice_idx] < 0) {
                 power += g->bolt[choice_idx];
                 discharge(g, choice_idx, -g->bolt[choice_idx]);
@@ -130,7 +132,6 @@ void simulate(graph_t *g, int count) {
     // init graph
     init_charge(g);
     init_boundary(g);
-    srand(1);
 
     // generate lightnings
     for (int i = 0; i < count; i++) {
