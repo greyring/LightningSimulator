@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include "graph.h"
 #include "sim.h"
+#include "instrument.h"
 
 static void usage(char *name) {
     char *use_string = "-g GFILE [-n STEPS] [-s SEED] [-u (r|b|s)] [-q] [-t THD] [-I]";
@@ -54,6 +55,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    track_activity(instrument);
+    START_ACTIVITY(ACTIVITY_STARTUP);
     if (gfile == NULL) {
         fprintf(stdout, "Couldn't open graph file\n");
         exit(1);
@@ -65,10 +68,12 @@ int main(int argc, char *argv[]) {
     fclose(gfile);
 
     srand(seed);
+    FINISH_ACTIVITY(ACTIVITY_STARTUP);
 
     simulate(g, count);
 
     free_graph(g);
+    SHOW_ACTIVITY(stderr, instrument);
 
     return 0;
 }

@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include "graph.h"
 #include "sim.h"
+#include "instrument.h"
 
 /* What is the crossover between binary and linear search */
 #define BINARY_THRESHOLD 4
@@ -92,7 +93,11 @@ static void simulate_one(graph_t *g) {
     int adj, idx;
     
     while (power > 0) {
+        START_ACTIVITY(ACTIVITY_UPDATE);
         update_charge(g);
+        FINISH_ACTIVITY(ACTIVITY_UPDATE);
+
+        START_ACTIVITY(ACTIVITY_NEXT);
         num_choice = 0;
         for (int i = 0; i < g->height; i++) {
             for (int j = 0; j < g->width; j++) {
@@ -123,6 +128,7 @@ static void simulate_one(graph_t *g) {
             }
             g->bolt[choice_idx] = 1;
         }
+        FINISH_ACTIVITY(ACTIVITY_NEXT);
     }
 }
 
@@ -132,12 +138,14 @@ void simulate(graph_t *g, int count) {
     // init graph
     init_charge(g);
     init_boundary(g);
+    init_bolt(g);
+    init_path(g);
 
     // generate lightnings
     for (int i = 0; i < count; i++) {
-        init_bolt(g);
-        init_path(g);
         simulate_one(g);
+
+        START_ACTIVITY(ACTIVITY_RECOVER);
         // one lightning is generated
         for (int y = 0; y < g->height; y++) {
             for (int x = 0; x < g->width; x++) {
@@ -153,5 +161,9 @@ void simulate(graph_t *g, int count) {
         // print bolt
         print_graph(g, stdout);
         fprintf(stdout, "\n");
+
+        init_bolt(g);
+        init_path(g);
+        FINISH_ACTIVITY(ACTIVITY_RECOVER);
     }
 }

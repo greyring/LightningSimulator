@@ -6,8 +6,8 @@ CFLAGS=-g -O3 -Wall -DDEBUG=$(DEBUG)
 LDFLAGS= -lm
 DDIR = ./data
 
-CFILES = main.c graph.c sim.c
-HFILES = graph.h
+CFILES = main.c graph.c sim.c instrument.c cycletimer.c
+HFILES = graph.h instrument.h cycletimer.h
 
 all: light-seq
 
