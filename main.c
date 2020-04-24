@@ -70,11 +70,15 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
     fclose(gfile);
-
+    // init graph
+    reset_charge(g);
+    reset_boundary(g);
+    reset_bolt(g);
+    reset_path(g);
     srand(seed);
-    FINISH_ACTIVITY(ACTIVITY_STARTUP);
 
     fprintf(ofile, "%d %d %d\n", g->height, g->width, count);
+    FINISH_ACTIVITY(ACTIVITY_STARTUP);
 
     simulate(g, count, ofile);
 

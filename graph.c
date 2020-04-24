@@ -50,6 +50,7 @@ graph_t *read_graph(FILE *infile) {
     int width, height, power, eta;
     int num_negative, num_positive;
     int x, y;
+    int i;
 
     // Read header information
     if (fgets(linebuf, MAXLINE, infile) == NULL) {
@@ -74,7 +75,7 @@ graph_t *read_graph(FILE *infile) {
         fprintf(stderr, "Bad graph input positive bolts\n");
         return NULL;
     }
-    for (int i = 0; i < num_positive; i++) {
+    for (i = 0; i < num_positive; i++) {
         if (fgets(linebuf, MAXLINE, infile) == NULL) {
             return NULL;
         }
@@ -93,7 +94,7 @@ graph_t *read_graph(FILE *infile) {
         fprintf(stderr, "Bad graph input negative bolts\n");
         return NULL;
     }
-    for (int i = 0; i < num_negative; i++) {
+    for (i = 0; i < num_negative; i++) {
         if (fgets(linebuf, MAXLINE, infile) == NULL) {
             return NULL;
         }
@@ -108,8 +109,9 @@ graph_t *read_graph(FILE *infile) {
 }
 
 void reset_charge(graph_t *g) {
-    for (int i = 0; i < g->height; i++) {
-        for (int j = 0; j < g->width; j++) {
+    int i, j;
+    for (i = 0; i < g->height; i++) {
+        for (j = 0; j < g->width; j++) {
             g->charge[i * g->width + j] = 0;
             g->charge_buffer[i * g->width + j] = 0;
         }
@@ -117,24 +119,27 @@ void reset_charge(graph_t *g) {
 }
 
 void reset_boundary(graph_t *g) {
-    for (int i = 0; i < g->height; i++) {
-        for (int j = 0; j < g->width; j++) {
+    int i, j;
+    for (i = 0; i < g->height; i++) {
+        for (j = 0; j < g->width; j++) {
             g->boundary[i * g->width + j] = 0.0;
         }
     }
 }
 
 void reset_bolt(graph_t *g) {
-    for (int i = 0; i < g->height; i++) {
-        for (int j = 0; j < g->width; j++) {
+    int i, j;
+    for (i = 0; i < g->height; i++) {
+        for (j = 0; j < g->width; j++) {
             g->bolt[i * g->width + j] = g->reset_bolt[i * g->width + j];
         }
     }
 }
 
 void reset_path(graph_t *g) {
-    for (int i = 0; i < g->height; i++) {
-        for (int j = 0; j < g->width; j++) {
+    int i, j;
+    for (i = 0; i < g->height; i++) {
+        for (j = 0; j < g->width; j++) {
             g->path[i * g->width + j] = -1;
         }
     }
@@ -158,8 +163,9 @@ int adjacent_pos(graph_t *g, int y, int x) {
 
 /* print the bolt value to outfile */
 void print_graph(graph_t *g, FILE *outfile) {
-    for (int i = 0; i < g->height; i++) {
-        for (int j = 0; j < g->width; j++) {
+    int i, j;
+    for (i = 0; i < g->height; i++) {
+        for (j = 0; j < g->width; j++) {
             fprintf(outfile, "%d", g->bolt[i * g->width + j]);
             if (j != g->width) {
                 fprintf(outfile, " ");
@@ -170,8 +176,9 @@ void print_graph(graph_t *g, FILE *outfile) {
 }
 
 void print_charge(graph_t *g, FILE *outfile) {
-    for (int i = 0; i < g->height; i++) {
-        for (int j = 0; j < g->width; j++) {
+    int i, j;
+    for (i = 0; i < g->height; i++) {
+        for (j = 0; j < g->width; j++) {
             fprintf(outfile, "%.2lf", g->charge[i * g->width + j]);
             if (j != g->width) {
                 fprintf(outfile, " ");

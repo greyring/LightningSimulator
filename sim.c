@@ -42,10 +42,12 @@ static inline int locate_value(double target, double *list, int len) {
 // if bolt > 0.0, charge = 0.0 // boundary
 // else charge = (boundary + neighbor's charge) / 4
 static void update_charge(graph_t *g) {
+    int i, j;
     int idx;
     double sum;
-    for (int i = 0; i < g->height; i++) {
-        for (int j = 0; j < g->width; j++) {
+    START_ACTIVITY(ACTIVITY_UPDATE);
+    for (i = 0; i < g->height; i++) {
+        for (j = 0; j < g->width; j++) {
             idx = i * g->width + j;
             // boundary condition
             if (g->bolt[idx] < 0) {
@@ -68,12 +70,13 @@ static void update_charge(graph_t *g) {
     }
 
     // replace origin
-    for (int i = 0; i < g->height; i++) {
-        for (int j = 0; j < g->width; j++) {
+    for (i = 0; i < g->height; i++) {
+        for (j = 0; j < g->width; j++) {
             idx = i * g->width + j;
             g->charge[idx] = g->charge_buffer[idx];
         }
     }
+    FINISH_ACTIVITY(ACTIVITY_UPDATE);
 }
 
 // add charge to bolt along the path
@@ -91,16 +94,15 @@ static void simulate_one(graph_t *g) {
     double prob;
     int num_choice;
     int adj, idx;
+    int i, j;
     
     while (power > 0) {
-        START_ACTIVITY(ACTIVITY_UPDATE);
         update_charge(g);
-        FINISH_ACTIVITY(ACTIVITY_UPDATE);
 
         START_ACTIVITY(ACTIVITY_NEXT);
         num_choice = 0;
-        for (int i = 0; i < g->height; i++) {
-            for (int j = 0; j < g->width; j++) {
+        for (i = 0; i < g->height; i++) {
+            for (j = 0; j < g->width; j++) {
                 idx = i * g->width + j;
                 // if (g->charge[idx] == 0)
                 //         continue;
@@ -134,21 +136,20 @@ static void simulate_one(graph_t *g) {
 
 void simulate(graph_t *g, int count, FILE *ofile) {
     int idx;
+    int i, x, y;
 
-    // init graph
-    reset_charge(g);
-    reset_boundary(g);
-    reset_bolt(g);
-    reset_path(g);
+    for (i = 0; i < g->width + g->height; i++) {
+        update_charge(g);
+    }
 
     // generate lightnings
-    for (int i = 0; i < count; i++) {
+    for (i = 0; i < count; i++) {
         simulate_one(g);
 
         START_ACTIVITY(ACTIVITY_RECOVER);
         // one lightning is generated
-        for (int y = 0; y < g->height; y++) {
-            for (int x = 0; x < g->width; x++) {
+        for (y = 0; y < g->height; y++) {
+            for (x = 0; x < g->width; x++) {
                 idx = y * g->width + x;
                 if (g->bolt[idx] > 1) {
                     g->boundary[idx] = g->bolt[idx] * 0.001;
