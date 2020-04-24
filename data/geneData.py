@@ -21,7 +21,7 @@ with open(output_file, 'w') as f:
     if mode == 1:
         f.write("0 "+str(mid_point)+"\n")
         f.write("1\n");
-        f.write(str(width)+" "+str(mid_point)+"\n")
+        f.write(str(width-1)+" "+str(mid_point)+"\n")
     elif mode == 2:
 
         f.write("0 "+str(mid_point)+"\n")
