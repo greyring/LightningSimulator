@@ -132,7 +132,7 @@ static void simulate_one(graph_t *g) {
     }
 }
 
-void simulate(graph_t *g, int count) {
+void simulate(graph_t *g, int count, FILE *ofile) {
     int idx;
 
     // init graph
@@ -157,11 +157,15 @@ void simulate(graph_t *g, int count) {
                 }
             }
         }
+        FINISH_ACTIVITY(ACTIVITY_RECOVER);
 
+        START_ACTIVITY(ACTIVITY_PRINT);
         // print bolt
-        print_graph(g, stdout);
-        fprintf(stdout, "\n");
+        print_graph(g, ofile);
+        fprintf(ofile, "\n");
+        FINISH_ACTIVITY(ACTIVITY_PRINT);
 
+        START_ACTIVITY(ACTIVITY_RECOVER);
         init_bolt(g);
         init_path(g);
         FINISH_ACTIVITY(ACTIVITY_RECOVER);

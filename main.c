@@ -20,6 +20,7 @@ static void usage(char *name) {
 
 int main(int argc, char *argv[]) {
     FILE *gfile = NULL;
+    FILE *ofile = stdout;
     graph_t *g = NULL;
     int count = 10;
     int thread_count = 1;
@@ -27,7 +28,7 @@ int main(int argc, char *argv[]) {
     bool instrument = false;
 
     char c;
-    char *optstring = "hg:n:s:t:I";
+    char *optstring = "hg:o:n:s:t:I";
     while ((c = getopt(argc, argv, optstring)) != -1) {
         switch(c) {
         case 'h':
@@ -35,6 +36,9 @@ int main(int argc, char *argv[]) {
             break;
         case 'g':
             gfile = fopen(optarg, "r");
+            break;
+        case 'o':
+            ofile = fopen(optarg, "w");
             break;
         case 'n':
             count = atoi(optarg);
@@ -70,9 +74,12 @@ int main(int argc, char *argv[]) {
     srand(seed);
     FINISH_ACTIVITY(ACTIVITY_STARTUP);
 
-    simulate(g, count);
+    fprintf(ofile, "%d %d %d\n", g->height, g->width, count);
+
+    simulate(g, count, ofile);
 
     free_graph(g);
+    fclose(ofile);
     SHOW_ACTIVITY(stderr, instrument);
 
     return 0;
