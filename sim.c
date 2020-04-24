@@ -152,7 +152,7 @@ void simulate(graph_t *g, int count, FILE *ofile) {
             for (x = 0; x < g->width; x++) {
                 idx = y * g->width + x;
                 if (g->bolt[idx] > 1) {
-                    g->boundary[idx] = g->bolt[idx] * 0.001;
+                    g->boundary[idx] = g->bolt[idx] * 0.0001;
                 } else {
                     g->boundary[idx] = 0;
                 }
