@@ -102,8 +102,8 @@ static void simulate_one(graph_t *g) {
         for (int i = 0; i < g->height; i++) {
             for (int j = 0; j < g->width; j++) {
                 idx = i * g->width + j;
-                if (g->charge[idx] == 0)
-                        continue;
+                // if (g->charge[idx] == 0)
+                //         continue;
                 if ((adj = adjacent_pos(g, i, j)) != -1) {
                     prob = pow(g->charge[idx], g->eta);
                     if (num_choice == 0)
@@ -136,10 +136,10 @@ void simulate(graph_t *g, int count, FILE *ofile) {
     int idx;
 
     // init graph
-    init_charge(g);
-    init_boundary(g);
-    init_bolt(g);
-    init_path(g);
+    reset_charge(g);
+    reset_boundary(g);
+    reset_bolt(g);
+    reset_path(g);
 
     // generate lightnings
     for (int i = 0; i < count; i++) {
@@ -166,8 +166,8 @@ void simulate(graph_t *g, int count, FILE *ofile) {
         FINISH_ACTIVITY(ACTIVITY_PRINT);
 
         START_ACTIVITY(ACTIVITY_RECOVER);
-        init_bolt(g);
-        init_path(g);
+        reset_bolt(g);
+        reset_path(g);
         FINISH_ACTIVITY(ACTIVITY_RECOVER);
     }
 }

@@ -22,7 +22,7 @@ static graph_t *new_graph(int width, int height, int power, int eta) {
     g->charge = (double*)calloc(nnode, sizeof(double));
     g->charge_buffer = (double*)calloc(nnode, sizeof(double));
     g->boundary = (double*)calloc(nnode, sizeof(double));
-    g->init_bolt = (int*)calloc(nnode, sizeof(int));
+    g->reset_bolt = (int*)calloc(nnode, sizeof(int));
     g->bolt = (int*)calloc(nnode, sizeof(int));
     g->choice_probs = (double*)calloc(nnode, sizeof(double));
     g->choice_idxs = (int*)calloc(nnode, sizeof(int));    
@@ -35,7 +35,7 @@ void free_graph(graph_t *g) {
     free(g->charge);
     free(g->charge_buffer);
     free(g->boundary);
-    free(g->init_bolt);
+    free(g->reset_bolt);
     free(g->bolt);
     free(g->choice_probs);
     free(g->choice_idxs);
@@ -82,7 +82,7 @@ graph_t *read_graph(FILE *infile) {
             fprintf(stderr, "Bad graph input positive bolts\n");
             return NULL;
         }
-        g->init_bolt[y * g->width + x] = 1;
+        g->reset_bolt[y * g->width + x] = 1;
     }
 
     // read negative bolts
@@ -101,13 +101,13 @@ graph_t *read_graph(FILE *infile) {
             fprintf(stderr, "Bad graph input negative bolts\n");
             return NULL;
         }
-        g->init_bolt[y * g->width + x] = -1;
+        g->reset_bolt[y * g->width + x] = -1;
     }
 
     return g;
 }
 
-void init_charge(graph_t *g) {
+void reset_charge(graph_t *g) {
     for (int i = 0; i < g->height; i++) {
         for (int j = 0; j < g->width; j++) {
             g->charge[i * g->width + j] = 0;
@@ -116,7 +116,7 @@ void init_charge(graph_t *g) {
     }
 }
 
-void init_boundary(graph_t *g) {
+void reset_boundary(graph_t *g) {
     for (int i = 0; i < g->height; i++) {
         for (int j = 0; j < g->width; j++) {
             g->boundary[i * g->width + j] = 0.0;
@@ -124,15 +124,15 @@ void init_boundary(graph_t *g) {
     }
 }
 
-void init_bolt(graph_t *g) {
+void reset_bolt(graph_t *g) {
     for (int i = 0; i < g->height; i++) {
         for (int j = 0; j < g->width; j++) {
-            g->bolt[i * g->width + j] = g->init_bolt[i * g->width + j];
+            g->bolt[i * g->width + j] = g->reset_bolt[i * g->width + j];
         }
     }
 }
 
-void init_path(graph_t *g) {
+void reset_path(graph_t *g) {
     for (int i = 0; i < g->height; i++) {
         for (int j = 0; j < g->width; j++) {
             g->path[i * g->width + j] = -1;
