@@ -82,9 +82,10 @@ int main(int argc, char *argv[]) {
 
     simulate(g, count, ofile);
 
+    SHOW_ACTIVITY(stderr, instrument);
+
     free_graph(g);
     fclose(ofile);
-    SHOW_ACTIVITY(stderr, instrument);
 
     return 0;
 }
