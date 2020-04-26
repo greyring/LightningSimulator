@@ -97,6 +97,9 @@ static int find_next(graph_t *g) {
     for (i = 0; i < g->height; i++) {
         for (j = 0; j < g->width; j++) {
             idx = i * g->width + j;
+            if (g->charge[idx] == 0) {
+                continue;
+            }
             if ((adj = adjacent_pos(g, i, j)) != -1) {
                 prob = pow(g->charge[idx], g->eta);
                 if (num_choice == 0)
