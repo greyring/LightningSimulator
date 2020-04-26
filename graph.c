@@ -109,39 +109,30 @@ graph_t *read_graph(FILE *infile) {
 }
 
 void reset_charge(graph_t *g) {
-    int i, j;
-    for (i = 0; i < g->height; i++) {
-        for (j = 0; j < g->width; j++) {
-            g->charge[i * g->width + j] = 0;
-            g->charge_buffer[i * g->width + j] = 0;
-        }
+    int i;
+    for (i = 0; i < g->height * g->width; i++) {
+        g->charge[i] = g->charge_buffer[i] = 0;
     }
 }
 
 void reset_boundary(graph_t *g) {
-    int i, j;
-    for (i = 0; i < g->height; i++) {
-        for (j = 0; j < g->width; j++) {
-            g->boundary[i * g->width + j] = 0.0;
-        }
+    int i;
+    for (i = 0; i < g->height * g->width; i++) {
+        g->boundary[i] = 0.0;
     }
 }
 
 void reset_bolt(graph_t *g) {
-    int i, j;
-    for (i = 0; i < g->height; i++) {
-        for (j = 0; j < g->width; j++) {
-            g->bolt[i * g->width + j] = g->reset_bolt[i * g->width + j];
-        }
+    int i;
+    for (i = 0; i < g->height * g->width; i++) {
+        g->bolt[i] = g->reset_bolt[i];
     }
 }
 
 void reset_path(graph_t *g) {
-    int i, j;
-    for (i = 0; i < g->height; i++) {
-        for (j = 0; j < g->width; j++) {
-            g->path[i * g->width + j] = -1;
-        }
+    int i;
+    for (i = 0; i < g->height * g->width; i++) {
+        g->path[i] = -1;
     }
 }
 
