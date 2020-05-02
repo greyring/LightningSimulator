@@ -1,15 +1,25 @@
 DEBUG=0
 CC=gcc
 OMP=-fopenmp -DOMP
+MPI=-DMPI
+MPICC = mpicc
 CFLAGS=-g -O3 -Wall -DDEBUG=$(DEBUG)
 #CFLAGS=-g -O3 -Wall -DDEBUG=$(DEBUG) -DDYNAMIC
 LDFLAGS= -lm
 DDIR = ./data
 
 SEQCFILES = light-seq.c graph.c sim-seq.c instrument.c cycletimer.c
-SEQHFILES = graph.h sim.h instrument.h cycletimer.h
+OPENMPCFILES = light-openmp.c graph.c sim-openmp.c instrument.c cycletimer.c
+MPICFILES = light-mpi.c graph.c sim-mpi.c instrument.c cycletimer.c
+HFILES = graph.h sim.h instrument.h cycletimer.h
 
-all: light-seq
+all: light-seq light-openmp light-mpi
 
-light-seq: $(SEQCFILES) $(SEQHFILES)
+light-seq: $(SEQCFILES) $(HFILES)
 	$(CC) $(CFLAGS) -o $@ $(SEQCFILES) $(LDFLAGS)
+
+light-openmp: $(OPENMPCFILES) $(HFILES)
+	$(CC) $(CFLAGS) $(OMP) -o $@ $(OPENMPCFILES) $(LDFLAGS)
+
+light-mpi: $(MPICFILES) $(HFILES)
+	$(MPICC) $(CFLAGS) $(MPI) -o $@ $(MPICFILES) $(LDFLAGS)
