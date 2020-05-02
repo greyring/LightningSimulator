@@ -6,10 +6,10 @@ CFLAGS=-g -O3 -Wall -DDEBUG=$(DEBUG)
 LDFLAGS= -lm
 DDIR = ./data
 
-CFILES = main.c graph.c sim.c instrument.c cycletimer.c
-HFILES = graph.h instrument.h cycletimer.h
+SEQCFILES = light-seq.c graph.c sim-seq.c instrument.c cycletimer.c
+SEQHFILES = graph.h sim.h instrument.h cycletimer.h
 
 all: light-seq
 
-light-seq: $(CFILES) $(HFILES)
-	$(CC) $(CFLAGS) -o $@ $(CFILES) $(LDFLAGS)
+light-seq: $(SEQCFILES) $(SEQHFILES)
+	$(CC) $(CFLAGS) -o $@ $(SEQCFILES) $(LDFLAGS)
