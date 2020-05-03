@@ -50,7 +50,7 @@ static void update_charge(graph_t *g) {
     {
         START_ACTIVITY(ACTIVITY_UPDATE);
     }
-    #pragma omp for 
+    #pragma omp for schedule(dynamic,32)
     for(idx = 0; idx < g_width*g_height; idx++){
         int i = idx / g_width;
         int j = idx % g_width;
@@ -71,14 +71,12 @@ static void update_charge(graph_t *g) {
             g->charge_buffer[idx] = sum / 4;
         }
     }
-    #pragma omp barrier
 
     // replace origin
     #pragma omp for
     for (idx = 0; idx < g->height * g->width; idx++) {
         g->charge[idx] = g->charge_buffer[idx];
     }
-    #pragma omp barrier
 
     #pragma omp master
     {
@@ -204,5 +202,4 @@ void simulate(graph_t *g, int count, FILE *ofile) {
             #pragma omp barrier
         }
     }
-    printf("simulation finished\n");
 }
