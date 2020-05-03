@@ -7,13 +7,12 @@
 #include "instrument.h"
 
 static void usage(char *name) {
-    char *use_string = "-g GFILE [-n STEPS] [-s SEED] [-u (r|b|s)] [-q] [-t THD] [-I]";
+    char *use_string = "-g GFILE [-n STEPS] [-s SEED] [-u (r|b|s)] [-q] [-I]";
     fprintf(stdout, "Usage: %s %s\n", name, use_string);
     fprintf(stdout, "   -h        Print this message\n");
     fprintf(stdout, "   -g GFILE  Graph file\n");
     fprintf(stdout, "   -n STEPS  Number of simulation steps\n");
     fprintf(stdout, "   -s SEED   Initial RNG seed\n");
-    fprintf(stdout, "   -t THD    Set number of threads\n");
     fprintf(stdout, "   -I        Instrument simulation activities\n");
     exit(0);
 }
@@ -23,12 +22,11 @@ int main(int argc, char *argv[]) {
     FILE *ofile = stdout;
     graph_t *g = NULL;
     int count = 10;
-    int thread_count = 1;
     unsigned long seed = 1;
     bool instrument = false;
 
     char c;
-    char *optstring = "hg:o:n:s:t:I";
+    char *optstring = "hg:o:n:s:I";
     while ((c = getopt(argc, argv, optstring)) != -1) {
         switch(c) {
         case 'h':
@@ -45,9 +43,6 @@ int main(int argc, char *argv[]) {
             break;
         case 's':
             seed = strtoul(optarg, NULL, 0);
-            break;
-        case 't':
-            thread_count = atoi(optarg);
             break;
         case 'I':
             instrument = true;

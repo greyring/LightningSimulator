@@ -46,32 +46,32 @@ static void update_charge(graph_t *g) {
     int idx;
     double sum;
     START_ACTIVITY(ACTIVITY_UPDATE);
-    for (i = 0; i < g->height; i++) {
-        for (j = 0; j < g->width; j++) {
-            idx = i * g->width + j;
-            // boundary condition
-            if (g->bolt[idx] < 0) {
-                g->charge_buffer[idx] = 1.0;
-            } else if (g->bolt[idx] > 0) {
-                g->charge_buffer[idx] = 0.0;
-            } else {
-                sum = g->boundary[idx]; // poisson equation
-                if (i > 0)
-                    sum += g->charge[(i - 1) * g->width + j];
-                if (i < g->height - 1)
-                    sum += g->charge[(i + 1) * g->width + j];
-                if (j > 0)
-                    sum += g->charge[i * g->width + j - 1];
-                if (j < g->width - 1)
-                    sum += g->charge[i * g->width + j + 1];
-                g->charge_buffer[idx] = sum / 4;
-            }
+    for (idx = 0; idx < g->height * g->width; idx++) {
+        i = idx / g->width;
+        j = idx % g->width;
+
+        // boundary condition
+        if (g->bolt[idx] < 0) {
+            g->charge_buffer[idx] = 1.0;
+        } else if (g->bolt[idx] > 0) {
+            g->charge_buffer[idx] = 0.0;
+        } else {
+            sum = g->boundary[idx]; // poisson equation
+            if (i > 0)
+                sum += g->charge[(i - 1) * g->width + j];
+            if (i < g->height - 1)
+                sum += g->charge[(i + 1) * g->width + j];
+            if (j > 0)
+                sum += g->charge[i * g->width + j - 1];
+            if (j < g->width - 1)
+                sum += g->charge[i * g->width + j + 1];
+            g->charge_buffer[idx] = sum / 4;
         }
     }
 
     // replace origin
-    for (i = 0; i < g->height * g->width; i++) {
-        g->charge[i] = g->charge_buffer[i];
+    for (idx = 0; idx < g->height * g->width; idx++) {
+        g->charge[idx] = g->charge_buffer[idx];
     }
     FINISH_ACTIVITY(ACTIVITY_UPDATE);
 }
@@ -94,25 +94,24 @@ static int find_next(graph_t *g) {
 
     START_ACTIVITY(ACTIVITY_NEXT);
     num_choice = 0;
-    for (i = 0; i < g->height; i++) {
-        for (j = 0; j < g->width; j++) {
-            idx = i * g->width + j;
-            if (g->charge[idx] == 0) {
-                continue;
-            }
-            adj = adjacent_pos(g, i, j);
-            if(adj == -1){
-                continue;
-            }
-            if (adj != -1) {
-                prob = pow(g->charge[idx], g->eta);
-                if (num_choice == 0)
-                    g->choice_probs[num_choice] = prob;
-                else
-                    g->choice_probs[num_choice] = g->choice_probs[num_choice - 1] + prob;
-                g->choice_idxs[num_choice] = idx;
-                num_choice++;
-            }
+    for (idx = 0; idx < g->height * g->width; idx++) {
+        i = idx / g->width;
+        j = idx % g->width;
+        if (g->charge[idx] == 0) {
+            continue;
+        }
+        adj = adjacent_pos(g, i, j);
+        if(adj == -1){
+            continue;
+        }
+        if (adj != -1) {
+            prob = pow(g->charge[idx], g->eta);
+            if (num_choice == 0)
+                g->choice_probs[num_choice] = prob;
+            else
+                g->choice_probs[num_choice] = g->choice_probs[num_choice - 1] + prob;
+            g->choice_idxs[num_choice] = idx;
+            num_choice++;
         }
     }
 
