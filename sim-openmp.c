@@ -52,8 +52,8 @@ static void update_charge(graph_t *g) {
     }
     #pragma omp for 
     for(idx = 0; idx < g_width*g_height; idx++){
-        int i = idx % g_width;
-        int j = idx / g_width;
+        int i = idx / g_width;
+        int j = idx % g_width;
         if (g->bolt[idx] < 0) {
             g->charge_buffer[idx] = 1.0;
         } else if (g->bolt[idx] > 0) {
@@ -71,35 +71,15 @@ static void update_charge(graph_t *g) {
             g->charge_buffer[idx] = sum / 4;
         }
     }
-
-    // for (i = 0; i < g->height; i++) {
-    //     for (j = 0; j < g->width; j++) {
-    //         idx = i * g->width + j;
-    //         // boundary condition
-    //         if (g->bolt[idx] < 0) {
-    //             g->charge_buffer[idx] = 1.0;
-    //         } else if (g->bolt[idx] > 0) {
-    //             g->charge_buffer[idx] = 0.0;
-    //         } else {
-    //             sum = g->boundary[idx]; // poisson equation
-    //             if (i > 0)
-    //                 sum += g->charge[(i - 1) * g->width + j];
-    //             if (i < g->height - 1)
-    //                 sum += g->charge[(i + 1) * g->width + j];
-    //             if (j > 0)
-    //                 sum += g->charge[i * g->width + j - 1];
-    //             if (j < g->width - 1)
-    //                 sum += g->charge[i * g->width + j + 1];
-    //             g->charge_buffer[idx] = sum / 4;
-    //         }
-    //     }
-    // }
+    #pragma omp barrier
 
     // replace origin
     #pragma omp for
     for (idx = 0; idx < g->height * g->width; idx++) {
         g->charge[idx] = g->charge_buffer[idx];
     }
+    #pragma omp barrier
+
     #pragma omp master
     {
         FINISH_ACTIVITY(ACTIVITY_UPDATE);
@@ -122,7 +102,6 @@ static void find_next(graph_t *g, int* choice_point) {
     int idx, choice;
     int g_eta = g->eta;
     int g_width = g->width;
-    int g_height = g->height;
 
 
     // #pragma omp master 
@@ -132,8 +111,8 @@ static void find_next(graph_t *g, int* choice_point) {
     num_choice = 0;
     // #pragma omp for 
     for(idx = 0; idx < g_width*g_width; idx++){
-        int i = idx % g_width;
-        int j = idx / g_height;
+        int i = idx / g_width;
+        int j = idx % g_width;
         if (g->charge[idx] == 0) {
                 continue;
         }
@@ -152,23 +131,6 @@ static void find_next(graph_t *g, int* choice_point) {
             num_choice++;
         }      
     }
-    // for (i = 0; i < g->height; i++) {
-    //     for (j = 0; j < g->width; j++) {
-    //         idx = i * g->width + j;
-    //         if (g->charge[idx] == 0) {
-    //             continue;
-    //         }
-    //         if ((adj = adjacent_pos(g, i, j)) != -1) {
-    //             prob = pow(g->charge[idx], g_eta);
-    //             if (num_choice == 0)
-    //                 g->choice_probs[num_choice] = prob;
-    //             else
-    //                 g->choice_probs[num_choice] = g->choice_probs[num_choice - 1] + prob;
-    //             g->choice_idxs[num_choice] = idx;
-    //             num_choice++;
-    //         }
-    //     }
-    // }
 
     // #pragma omp master
     {
@@ -179,39 +141,28 @@ static void find_next(graph_t *g, int* choice_point) {
             *choice_point = -1;
         *choice_point = g->choice_idxs[choice];
     }
-
-    
-    // return g->choice_idxs[choice];
 }
 
 static void simulate_one(graph_t *g, int *g_power) {
-    int next_bolt = -1;
-    int tid = omp_get_thread_num();
-
     while (*g_power > 0) {
         update_charge(g);
-        
-        // printf("simulate find next finished, tid: %d",tid);
-        #pragma omp barrier
         #pragma omp master
         {
-        find_next(g, &next_bolt);
+            int next_bolt = -1;
+            find_next(g, &next_bolt);
 
-        if (next_bolt != -1) {
-            g->path[next_bolt] = adjacent_pos(g, next_bolt / g->width, next_bolt % g->width);
-            if (g->bolt[next_bolt] < 0) {
+            if (next_bolt != -1) {
+                g->path[next_bolt] = adjacent_pos(g, next_bolt / g->width, next_bolt % g->width);
+                if (g->bolt[next_bolt] < 0) {
 
-                *g_power += g->bolt[next_bolt];
-                discharge(g, next_bolt, -g->bolt[next_bolt]);
+                    *g_power += g->bolt[next_bolt];
+                    discharge(g, next_bolt, -g->bolt[next_bolt]);
+                }
+                g->bolt[next_bolt] = 1;
             }
-            g->bolt[next_bolt] = 1;
-        }
         }
         #pragma omp barrier
-        // printf("one iteration finished , tid: %d",tid);
     }
-
-    // printf("simulate one finished, tid: %d",tid);
 }
 
 void simulate(graph_t *g, int count, FILE *ofile) {
@@ -219,21 +170,13 @@ void simulate(graph_t *g, int count, FILE *ofile) {
     #pragma omp parallel
     {
         int i, idx;
-        // printf("simulation start, count: %d\n", count);
         for (i = 0; i < g->width + g->height; i++) {
             update_charge(g);
         }
-        #pragma omp barrier
         // generate lightnings
-        
-        int tid = omp_get_thread_num();
         for (i = 0; i < count; i++) {
-            // printf("count : %d, tid: %d\n", i, tid);
             g_power = g->power;
             simulate_one(g, &g_power);
-
-            // printf("start reset the boundary state, count: %d, tid:%d\n",i, tid);
-            
             #pragma omp master
             {
                 START_ACTIVITY(ACTIVITY_RECOVER);
@@ -246,21 +189,13 @@ void simulate(graph_t *g, int count, FILE *ofile) {
                     }
                 }
                 FINISH_ACTIVITY(ACTIVITY_RECOVER);
-            }
-            // printf("start print the bolt and graph, count: %d, tid: %d\n",i, tid);
 
-            #pragma omp master
-            {
-                START_ACTIVITY(ACTIVITY_PRINT);
                 // print bolt
-                
+                START_ACTIVITY(ACTIVITY_PRINT);
                 print_graph(g, ofile);
                 fprintf(ofile, "\n");
                 FINISH_ACTIVITY(ACTIVITY_PRINT);
-            }
-            // printf("start reset the bolt and path, count: %d, tid: %d\n",i, tid);
-            #pragma omp master
-            {
+
                 START_ACTIVITY(ACTIVITY_RECOVER);
                 reset_bolt(g);
                 reset_path(g);
