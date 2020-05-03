@@ -98,6 +98,7 @@ static void find_next(graph_t *g, int* choice_point, int* num_choice) {
     int idx, choice;
     int g_eta = g->eta;
     int g_width = g->width;
+    int g_height = g->height;
 
 
     #pragma omp master 
@@ -105,10 +106,9 @@ static void find_next(graph_t *g, int* choice_point, int* num_choice) {
         START_ACTIVITY(ACTIVITY_NEXT);
         *num_choice = 0;
     }
-    
-    #pragma omp barrier
+
     #pragma omp for 
-    for(idx = 0; idx < g_width*g_width; idx++){
+    for(idx = 0; idx < g_height*g_width; idx++){
         int i = idx / g_width;
         int j = idx % g_width;
         if (g->charge[idx] == 0) {
@@ -127,13 +127,43 @@ static void find_next(graph_t *g, int* choice_point, int* num_choice) {
             g->choice_probs[*num_choice] = prob;
             g->choice_idxs[*num_choice] = idx;
             (*num_choice)++;
-        }      
+        }
     }
-
-    #pragma omp barrier
 
     #pragma omp master
     {
+        // int i, j;
+        // printf("before: ");
+        // for (i = 0; i < *num_choice; i++) {
+        //     printf("%d ", g->choice_idxs[i]);
+        // }
+        // printf("\n");
+        // // sort by index        
+        // for (i = 0; i < *num_choice - 1; i++) {
+        //     // for (j = 0; j < *num_choice; j++) {
+        //     //     printf("%d ", g->choice_idxs[j]);
+        //     // }
+        //     // printf("\n");
+        //     for (j = 0; j < *num_choice - 1 - i; j++) {
+        //         if (g->choice_idxs[j] > g->choice_idxs[j + 1]) {
+        //             int tempi = g->choice_idxs[j];
+        //             g->choice_idxs[j] = g->choice_idxs[j + 1];
+        //             g->choice_idxs[j + 1] = tempi;
+        //             double tempd = g->choice_probs[j];
+        //             g->choice_probs[j] = g->choice_probs[j + 1];
+        //             g->choice_probs[j + 1] = tempd;
+        //         }
+        //     }
+            
+        // }
+        // for (i = 1; i < *num_choice; i++) {
+        //     g->choice_probs[i] += g->choice_probs[i - 1];
+        // }
+        // printf("after: ");
+        // for (i = 0; i < *num_choice; i++) {
+        //     printf("%d ", g->choice_idxs[i]);
+        // }
+        // printf("\n");
         breach = (double)rand()/RAND_MAX * g->choice_probs[*num_choice - 1];
         choice = locate_value(breach, g->choice_probs, *num_choice); 
         FINISH_ACTIVITY(ACTIVITY_NEXT);
@@ -141,6 +171,7 @@ static void find_next(graph_t *g, int* choice_point, int* num_choice) {
             *choice_point = -1;
         *choice_point = g->choice_idxs[choice];
     }
+    #pragma omp barrier
 }
 
 static void simulate_one(graph_t *g, int *g_power, int *g_num_choice) {
