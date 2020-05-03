@@ -43,38 +43,67 @@ static inline int locate_value(double target, double *list, int len) {
 // if bolt > 0.0, charge = 0.0 // boundary
 // else charge = (boundary + neighbor's charge) / 4
 static void update_charge(graph_t *g) {
-    int i, j;
     int idx;
-    double sum;
-    START_ACTIVITY(ACTIVITY_UPDATE);
-    for (i = 0; i < g->height; i++) {
-        for (j = 0; j < g->width; j++) {
-            idx = i * g->width + j;
-            // boundary condition
-            if (g->bolt[idx] < 0) {
-                g->charge_buffer[idx] = 1.0;
-            } else if (g->bolt[idx] > 0) {
-                g->charge_buffer[idx] = 0.0;
-            } else {
-                sum = g->boundary[idx]; // poisson equation
-                if (i > 0)
-                    sum += g->charge[(i - 1) * g->width + j];
-                if (i < g->height - 1)
-                    sum += g->charge[(i + 1) * g->width + j];
-                if (j > 0)
-                    sum += g->charge[i * g->width + j - 1];
-                if (j < g->width - 1)
-                    sum += g->charge[i * g->width + j + 1];
-                g->charge_buffer[idx] = sum / 4;
-            }
+    int g_width = g->width;
+    int g_height = g->height;
+    #pragma omp master
+    {
+        START_ACTIVITY(ACTIVITY_UPDATE);
+    }
+    #pragma omp for 
+    for(idx = 0; idx < g_width*g_height; idx++){
+        int i = idx % g_width;
+        int j = idx / g_width;
+        if (g->bolt[idx] < 0) {
+            g->charge_buffer[idx] = 1.0;
+        } else if (g->bolt[idx] > 0) {
+            g->charge_buffer[idx] = 0.0;
+        } else {
+            double sum = g->boundary[idx]; // poisson equation
+            if (i > 0)
+                sum += g->charge[(i - 1) * g_width + j];
+            if (i < g_height - 1)
+                sum += g->charge[(i + 1) * g_width+ j];
+            if (j > 0)
+                sum += g->charge[i * g_width + j - 1];
+            if (j < g_width - 1)
+                sum += g->charge[i * g_width + j + 1];
+            g->charge_buffer[idx] = sum / 4;
         }
     }
 
+    // for (i = 0; i < g->height; i++) {
+    //     for (j = 0; j < g->width; j++) {
+    //         idx = i * g->width + j;
+    //         // boundary condition
+    //         if (g->bolt[idx] < 0) {
+    //             g->charge_buffer[idx] = 1.0;
+    //         } else if (g->bolt[idx] > 0) {
+    //             g->charge_buffer[idx] = 0.0;
+    //         } else {
+    //             sum = g->boundary[idx]; // poisson equation
+    //             if (i > 0)
+    //                 sum += g->charge[(i - 1) * g->width + j];
+    //             if (i < g->height - 1)
+    //                 sum += g->charge[(i + 1) * g->width + j];
+    //             if (j > 0)
+    //                 sum += g->charge[i * g->width + j - 1];
+    //             if (j < g->width - 1)
+    //                 sum += g->charge[i * g->width + j + 1];
+    //             g->charge_buffer[idx] = sum / 4;
+    //         }
+    //     }
+    // }
+
     // replace origin
-    for (i = 0; i < g->height * g->width; i++) {
-        g->charge[i] = g->charge_buffer[i];
+    #pragma omp for
+    for (idx = 0; idx < g->height * g->width; idx++) {
+        g->charge[idx] = g->charge_buffer[idx];
     }
-    FINISH_ACTIVITY(ACTIVITY_UPDATE);
+    #pragma omp master
+    {
+        FINISH_ACTIVITY(ACTIVITY_UPDATE);
+    }
 }
 
 // add charge to bolt along the path
@@ -87,90 +116,158 @@ static void discharge(graph_t *g, int index, int charge) {
     }
 }
 
-static int find_next(graph_t *g) {
+static void find_next(graph_t *g, int* choice_point) {
     double prob, breach;
     int num_choice;
-    int adj, idx, choice;
-    int i, j;
+    int idx, choice;
+    int g_eta = g->eta;
+    int g_width = g->width;
+    int g_height = g->height;
 
-    START_ACTIVITY(ACTIVITY_NEXT);
+
+    // #pragma omp master 
+    {
+        START_ACTIVITY(ACTIVITY_NEXT);
+    }
     num_choice = 0;
-    for (i = 0; i < g->height; i++) {
-        for (j = 0; j < g->width; j++) {
-            idx = i * g->width + j;
-            if (g->charge[idx] == 0) {
+    // #pragma omp for 
+    for(idx = 0; idx < g_width*g_width; idx++){
+        int i = idx % g_width;
+        int j = idx / g_height;
+        if (g->charge[idx] == 0) {
                 continue;
-            }
-            if ((adj = adjacent_pos(g, i, j)) != -1) {
-                prob = pow(g->charge[idx], g->eta);
-                if (num_choice == 0)
-                    g->choice_probs[num_choice] = prob;
-                else
-                    g->choice_probs[num_choice] = g->choice_probs[num_choice - 1] + prob;
-                g->choice_idxs[num_choice] = idx;
-                num_choice++;
-            }
         }
+        int adj = adjacent_pos(g, i, j);
+        if(adj == -1){
+            continue;
+        }
+        // #pragma omp atomic
+        {
+            prob = pow(g->charge[idx], g_eta);
+            if (num_choice == 0)
+                g->choice_probs[num_choice] = prob;
+            else
+                g->choice_probs[num_choice] = g->choice_probs[num_choice - 1] + prob;
+            g->choice_idxs[num_choice] = idx;
+            num_choice++;
+        }      
+    }
+    // for (i = 0; i < g->height; i++) {
+    //     for (j = 0; j < g->width; j++) {
+    //         idx = i * g->width + j;
+    //         if (g->charge[idx] == 0) {
+    //             continue;
+    //         }
+    //         if ((adj = adjacent_pos(g, i, j)) != -1) {
+    //             prob = pow(g->charge[idx], g_eta);
+    //             if (num_choice == 0)
+    //                 g->choice_probs[num_choice] = prob;
+    //             else
+    //                 g->choice_probs[num_choice] = g->choice_probs[num_choice - 1] + prob;
+    //             g->choice_idxs[num_choice] = idx;
+    //             num_choice++;
+    //         }
+    //     }
+    // }
+
+    // #pragma omp master
+    {
+        breach = (double)rand()/RAND_MAX * g->choice_probs[num_choice - 1];
+        choice = locate_value(breach, g->choice_probs, num_choice); 
+        FINISH_ACTIVITY(ACTIVITY_NEXT);
+        if (choice == -1)
+            *choice_point = -1;
+        *choice_point = g->choice_idxs[choice];
     }
 
-    breach = (double)rand()/RAND_MAX * g->choice_probs[num_choice - 1];
-    choice = locate_value(breach, g->choice_probs, num_choice);
-    FINISH_ACTIVITY(ACTIVITY_NEXT);
-
-    if (choice == -1)
-        return -1;
-    return g->choice_idxs[choice];
+    
+    // return g->choice_idxs[choice];
 }
 
-static void simulate_one(graph_t *g) {
-    int power = g->power;
+static void simulate_one(graph_t *g, int *g_power) {
     int next_bolt = -1;
+    int tid = omp_get_thread_num();
 
-    while (power > 0) {
+    while (*g_power > 0) {
         update_charge(g);
-        next_bolt = find_next(g);
+        
+        // printf("simulate find next finished, tid: %d",tid);
+        #pragma omp barrier
+        #pragma omp master
+        {
+        find_next(g, &next_bolt);
+
         if (next_bolt != -1) {
             g->path[next_bolt] = adjacent_pos(g, next_bolt / g->width, next_bolt % g->width);
             if (g->bolt[next_bolt] < 0) {
-                power += g->bolt[next_bolt];
+
+                *g_power += g->bolt[next_bolt];
                 discharge(g, next_bolt, -g->bolt[next_bolt]);
             }
             g->bolt[next_bolt] = 1;
         }
+        }
+        #pragma omp barrier
+        // printf("one iteration finished , tid: %d",tid);
     }
+
+    // printf("simulate one finished, tid: %d",tid);
 }
 
 void simulate(graph_t *g, int count, FILE *ofile) {
-    int i, idx;
-
-    for (i = 0; i < g->width + g->height; i++) {
-        update_charge(g);
-    }
-
-    // generate lightnings
-    for (i = 0; i < count; i++) {
-        simulate_one(g);
-
-        START_ACTIVITY(ACTIVITY_RECOVER);
-        // one lightning is generated
-        for (idx = 0; idx < g->height * g->width; idx++) {
-            if (g->bolt[idx] > 1) {
-                g->boundary[idx] = g->bolt[idx] * 0.0001;
-            } else {
-                g->boundary[idx] = 0;
-            }
+    int g_power;
+    #pragma omp parallel
+    {
+        int i, idx;
+        // printf("simulation start, count: %d\n", count);
+        for (i = 0; i < g->width + g->height; i++) {
+            update_charge(g);
         }
-        FINISH_ACTIVITY(ACTIVITY_RECOVER);
+        #pragma omp barrier
+        // generate lightnings
+        
+        int tid = omp_get_thread_num();
+        for (i = 0; i < count; i++) {
+            // printf("count : %d, tid: %d\n", i, tid);
+            g_power = g->power;
+            simulate_one(g, &g_power);
 
-        START_ACTIVITY(ACTIVITY_PRINT);
-        // print bolt
-        print_graph(g, ofile);
-        fprintf(ofile, "\n");
-        FINISH_ACTIVITY(ACTIVITY_PRINT);
+            // printf("start reset the boundary state, count: %d, tid:%d\n",i, tid);
+            
+            #pragma omp master
+            {
+                START_ACTIVITY(ACTIVITY_RECOVER);
+                // one lightning is generated
+                for (idx = 0; idx < g->height * g->width; idx++) {
+                    if (g->bolt[idx] > 1) {
+                        g->boundary[idx] = g->bolt[idx] * 0.0001;
+                    } else {
+                        g->boundary[idx] = 0;
+                    }
+                }
+                FINISH_ACTIVITY(ACTIVITY_RECOVER);
+            }
+            // printf("start print the bolt and graph, count: %d, tid: %d\n",i, tid);
 
-        START_ACTIVITY(ACTIVITY_RECOVER);
-        reset_bolt(g);
-        reset_path(g);
-        FINISH_ACTIVITY(ACTIVITY_RECOVER);
+            #pragma omp master
+            {
+                START_ACTIVITY(ACTIVITY_PRINT);
+                // print bolt
+                
+                print_graph(g, ofile);
+                fprintf(ofile, "\n");
+                FINISH_ACTIVITY(ACTIVITY_PRINT);
+            }
+            // printf("start reset the bolt and path, count: %d, tid: %d\n",i, tid);
+            #pragma omp master
+            {
+                START_ACTIVITY(ACTIVITY_RECOVER);
+                reset_bolt(g);
+                reset_path(g);
+                FINISH_ACTIVITY(ACTIVITY_RECOVER);
+            }
+            #pragma omp barrier
+        }
     }
+    printf("simulation finished\n");
 }

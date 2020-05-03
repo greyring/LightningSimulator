@@ -100,7 +100,11 @@ static int find_next(graph_t *g) {
             if (g->charge[idx] == 0) {
                 continue;
             }
-            if ((adj = adjacent_pos(g, i, j)) != -1) {
+            adj = adjacent_pos(g, i, j);
+            if(adj == -1){
+                continue;
+            }
+            if (adj != -1) {
                 prob = pow(g->charge[idx], g->eta);
                 if (num_choice == 0)
                     g->choice_probs[num_choice] = prob;
