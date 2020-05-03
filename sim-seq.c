@@ -88,36 +88,28 @@ static void discharge(graph_t *g, int index, int charge) {
 
 static int find_next(graph_t *g) {
     double prob, breach;
-    int num_choice;
-    int adj, idx, choice;
-    int i, j;
+    int i, idx, choice;
 
-    START_ACTIVITY(ACTIVITY_NEXT);
-    num_choice = 0;
-    for (idx = 0; idx < g->height * g->width; idx++) {
-        i = idx / g->width;
-        j = idx % g->width;
-        if (g->charge[idx] == 0) {
-            continue;
-        }
-        adj = adjacent_pos(g, i, j);
-        if(adj == -1){
-            continue;
-        }
-        if (adj != -1) {
+    // calculate probability based on latest charge
+    for (i = 0; i < g->num_choice; i++) {
+        idx = g->choice_idxs[i];
+
+        if (g->bolt[idx] > 0) {
+            prob = 0;
+        } else {
             prob = pow(g->charge[idx], g->eta);
-            if (num_choice == 0)
-                g->choice_probs[num_choice] = prob;
-            else
-                g->choice_probs[num_choice] = g->choice_probs[num_choice - 1] + prob;
-            g->choice_idxs[num_choice] = idx;
-            num_choice++;
+        }
+    
+        if (i == 0) {
+            g->choice_probs[i] = prob;
+        } else {
+            g->choice_probs[i] = g->choice_probs[i - 1] + prob;
         }
     }
 
-    breach = (double)rand()/RAND_MAX * g->choice_probs[num_choice - 1];
-    choice = locate_value(breach, g->choice_probs, num_choice);
-    FINISH_ACTIVITY(ACTIVITY_NEXT);
+    // choose one as bolt
+    breach = (double)rand()/RAND_MAX * g->choice_probs[g->num_choice - 1];
+    choice = locate_value(breach, g->choice_probs, g->num_choice);
 
     if (choice == -1)
         return -1;
@@ -127,23 +119,44 @@ static int find_next(graph_t *g) {
 static void simulate_one(graph_t *g) {
     int power = g->power;
     int next_bolt = -1;
+    int idx;
+
+    START_ACTIVITY(ACTIVITY_RECOVER);
+    reset_bolt(g);
+    reset_path(g);
+    reset_choice(g);
+    FINISH_ACTIVITY(ACTIVITY_RECOVER);
 
     while (power > 0) {
         update_charge(g);
+
+        START_ACTIVITY(ACTIVITY_NEXT);
         next_bolt = find_next(g);
         if (next_bolt != -1) {
-            g->path[next_bolt] = adjacent_pos(g, next_bolt / g->width, next_bolt % g->width);
             if (g->bolt[next_bolt] < 0) {
                 power += g->bolt[next_bolt];
                 discharge(g, next_bolt, -g->bolt[next_bolt]);
             }
             g->bolt[next_bolt] = 1;
+            find_choice(g, next_bolt);
+        }
+        FINISH_ACTIVITY(ACTIVITY_NEXT);
+    }
+
+    // one lightning is generated
+    START_ACTIVITY(ACTIVITY_RECOVER);
+    for (idx = 0; idx < g->height * g->width; idx++) {
+        if (g->bolt[idx] > 1) {
+            g->boundary[idx] = g->bolt[idx] * 0.0001;
+        } else {
+            g->boundary[idx] = 0;
         }
     }
+    FINISH_ACTIVITY(ACTIVITY_RECOVER);
 }
 
 void simulate(graph_t *g, int count, FILE *ofile) {
-    int i, idx;
+    int i;
 
     for (i = 0; i < g->width + g->height; i++) {
         update_charge(g);
@@ -153,26 +166,10 @@ void simulate(graph_t *g, int count, FILE *ofile) {
     for (i = 0; i < count; i++) {
         simulate_one(g);
 
-        START_ACTIVITY(ACTIVITY_RECOVER);
-        // one lightning is generated
-        for (idx = 0; idx < g->height * g->width; idx++) {
-            if (g->bolt[idx] > 1) {
-                g->boundary[idx] = g->bolt[idx] * 0.0001;
-            } else {
-                g->boundary[idx] = 0;
-            }
-        }
-        FINISH_ACTIVITY(ACTIVITY_RECOVER);
-
         START_ACTIVITY(ACTIVITY_PRINT);
         // print bolt
         print_graph(g, ofile);
         fprintf(ofile, "\n");
         FINISH_ACTIVITY(ACTIVITY_PRINT);
-
-        START_ACTIVITY(ACTIVITY_RECOVER);
-        reset_bolt(g);
-        reset_path(g);
-        FINISH_ACTIVITY(ACTIVITY_RECOVER);
     }
 }

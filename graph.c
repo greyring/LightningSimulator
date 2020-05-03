@@ -24,8 +24,10 @@ static graph_t *new_graph(int width, int height, int power, int eta) {
     g->boundary = (double*)calloc(nnode, sizeof(double));
     g->reset_bolt = (int*)calloc(nnode, sizeof(int));
     g->bolt = (int*)calloc(nnode, sizeof(int));
+    g->num_choice = 0;
     g->choice_probs = (double*)calloc(nnode, sizeof(double));
-    g->choice_idxs = (int*)calloc(nnode, sizeof(int));    
+    g->choice_idxs = (int*)calloc(nnode, sizeof(int));   
+    g->choosed = (int*)calloc(nnode, sizeof(int));  
     g->path = (int*)calloc(nnode, sizeof(int));
 
     return g;
@@ -129,6 +131,18 @@ void reset_bolt(graph_t *g) {
     }
 }
 
+void reset_choice(graph_t *g) {
+    int i;
+    g->num_choice = 0;
+    for (i = 0; i < g->height * g->width; i++) {
+        g->choosed[i] = 0;
+    }
+    // get choices idxs
+    for (i = 0; i < g->width * g->height; i++) {
+        find_choice(g, i);
+    }
+}
+
 void reset_path(graph_t *g) {
     int i;
     for (i = 0; i < g->height * g->width; i++) {
@@ -136,20 +150,27 @@ void reset_path(graph_t *g) {
     }
 }
 
-// return index of adjacent node with bolt > 0, else return -1
-// up, left, right, down
-int adjacent_pos(graph_t *g, int y, int x) {
-    if (g->bolt[y * g->width + x] > 0)
-        return -1;
-    if (y > 0 && g->bolt[(y - 1) * g->width + x] > 0)
-        return (y - 1) * g->width + x;
-    if (x > 0 && g->bolt[y * g->width + x - 1] > 0)
-        return y * g->width + x - 1;
-    if (x < g->width - 1 && g->bolt[y * g->width + x + 1] > 0)
-        return y * g->width + x + 1;
-    if (y < g->height - 1 && g->bolt[(y + 1) * g->width + x] > 0)
-        return (y + 1) * g->width + x;
-    return -1;
+static void choose_helper(graph_t *g, int bolt_idx, int i, int j) {
+    int idx = i * g->width + j;
+    if (i >= 0 && i < g->height && j >= 0 && j < g->width &&
+        g->choosed[idx] == 0 && g->bolt[idx] <= 0) {
+        g->choosed[idx] = 1;
+        g->choice_idxs[g->num_choice] = idx;
+        g->num_choice++;
+        g->path[idx] = bolt_idx;
+    }
+}
+
+void find_choice(graph_t *g, int idx) {
+    int i, j;
+    if (g->bolt[idx] > 0) {
+        i = idx / g->width;
+        j = idx % g->width;
+        choose_helper(g, idx, i - 1, j);
+        choose_helper(g, idx, i, j - 1);
+        choose_helper(g, idx, i, j + 1);
+        choose_helper(g, idx, i + 1, j);
+    }
 }
 
 /* print the bolt value to outfile */
