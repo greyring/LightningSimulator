@@ -77,7 +77,6 @@ static void update_charge(graph_t *g) {
     for (idx = 0; idx < g->height * g->width; idx++) {
         g->charge[idx] = g->charge_buffer[idx];
     }
-
     #pragma omp master
     {
         FINISH_ACTIVITY(ACTIVITY_UPDATE);
@@ -94,46 +93,49 @@ static void discharge(graph_t *g, int index, int charge) {
     }
 }
 
-static void find_next(graph_t *g, int* choice_point) {
-    double prob, breach;
-    int num_choice;
+static void find_next(graph_t *g, int* choice_point, int* num_choice) {
+    double breach;
     int idx, choice;
     int g_eta = g->eta;
     int g_width = g->width;
 
 
-    // #pragma omp master 
+    #pragma omp master 
     {
         START_ACTIVITY(ACTIVITY_NEXT);
+        *num_choice = 0;
     }
-    num_choice = 0;
-    // #pragma omp for 
+    
+    #pragma omp barrier
+    #pragma omp for 
     for(idx = 0; idx < g_width*g_width; idx++){
         int i = idx / g_width;
         int j = idx % g_width;
         if (g->charge[idx] == 0) {
-                continue;
+            continue;
         }
         int adj = adjacent_pos(g, i, j);
         if(adj == -1){
             continue;
         }
-        // #pragma omp atomic
+        double prob = pow(g->charge[idx], g_eta);
+        int tid = omp_get_thread_num();
+
+        #pragma omp critical
         {
-            prob = pow(g->charge[idx], g_eta);
-            if (num_choice == 0)
-                g->choice_probs[num_choice] = prob;
-            else
-                g->choice_probs[num_choice] = g->choice_probs[num_choice - 1] + prob;
-            g->choice_idxs[num_choice] = idx;
-            num_choice++;
+            // printf("tid: %d, idx: %d\n", tid, idx);
+            g->choice_probs[*num_choice] = prob;
+            g->choice_idxs[*num_choice] = idx;
+            (*num_choice)++;
         }      
     }
 
-    // #pragma omp master
+    #pragma omp barrier
+
+    #pragma omp master
     {
-        breach = (double)rand()/RAND_MAX * g->choice_probs[num_choice - 1];
-        choice = locate_value(breach, g->choice_probs, num_choice); 
+        breach = (double)rand()/RAND_MAX * g->choice_probs[*num_choice - 1];
+        choice = locate_value(breach, g->choice_probs, *num_choice); 
         FINISH_ACTIVITY(ACTIVITY_NEXT);
         if (choice == -1)
             *choice_point = -1;
@@ -141,14 +143,16 @@ static void find_next(graph_t *g, int* choice_point) {
     }
 }
 
-static void simulate_one(graph_t *g, int *g_power) {
+static void simulate_one(graph_t *g, int *g_power, int *g_num_choice) {
     while (*g_power > 0) {
         update_charge(g);
+        int next_bolt = -1;
+        find_next(g, &next_bolt, g_num_choice);
+        #pragma omp barrier
+
         #pragma omp master
         {
-            int next_bolt = -1;
-            find_next(g, &next_bolt);
-
+            // printf("next_bolt: %d\n", next_bolt);   
             if (next_bolt != -1) {
                 g->path[next_bolt] = adjacent_pos(g, next_bolt / g->width, next_bolt % g->width);
                 if (g->bolt[next_bolt] < 0) {
@@ -165,6 +169,7 @@ static void simulate_one(graph_t *g, int *g_power) {
 
 void simulate(graph_t *g, int count, FILE *ofile) {
     int g_power;
+    int g_num_choice;
     #pragma omp parallel
     {
         int i, idx;
@@ -174,7 +179,7 @@ void simulate(graph_t *g, int count, FILE *ofile) {
         // generate lightnings
         for (i = 0; i < count; i++) {
             g_power = g->power;
-            simulate_one(g, &g_power);
+            simulate_one(g, &g_power, &g_num_choice);
             #pragma omp master
             {
                 START_ACTIVITY(ACTIVITY_RECOVER);
