@@ -37,6 +37,69 @@ static inline int locate_value(double target, double *list, int len) {
     return right;
 }
 
+static void reset_charge(graph_t *g) {
+    int i;
+    for (i = 0; i < g->height * g->width; i++) {
+        g->charge[i] = g->charge_buffer[i] = 0;
+    }
+}
+
+static void reset_boundary(graph_t *g) {
+    int i;
+    for (i = 0; i < g->height * g->width; i++) {
+        g->boundary[i] = 0.0;
+    }
+}
+
+static void reset_bolt(graph_t *g) {
+    int i;
+    for (i = 0; i < g->height * g->width; i++) {
+        g->bolt[i] = g->reset_bolt[i];
+    }
+}
+
+static void reset_path(graph_t *g) {
+    int i;
+    for (i = 0; i < g->height * g->width; i++) {
+        g->path[i] = -1;
+    }
+}
+
+static void choose_helper(graph_t *g, int bolt_idx, int i, int j) {
+    int idx = i * g->width + j;
+    if (i >= 0 && i < g->height && j >= 0 && j < g->width &&
+        g->choosed[idx] == 0 && g->bolt[idx] <= 0) {
+        g->choosed[idx] = 1;
+        g->choice_idxs[g->num_choice] = idx;
+        g->num_choice++;
+        g->path[idx] = bolt_idx;
+    }
+}
+
+static void find_choice(graph_t *g, int idx) {
+    int i, j;
+    if (g->bolt[idx] > 0) {
+        i = idx / g->width;
+        j = idx % g->width;
+        choose_helper(g, idx, i - 1, j);
+        choose_helper(g, idx, i, j - 1);
+        choose_helper(g, idx, i, j + 1);
+        choose_helper(g, idx, i + 1, j);
+    }
+}
+
+static void reset_choice(graph_t *g) {
+    int i;
+    g->num_choice = 0;
+    for (i = 0; i < g->height * g->width; i++) {
+        g->choosed[i] = 0;
+    }
+    // get choices idxs
+    for (i = 0; i < g->width * g->height; i++) {
+        find_choice(g, i);
+    }
+}
+
 // get bolt at x, y
 // if bolt < 0.0, charge = 1.0 // boundary
 // if bolt > 0.0, charge = 0.0 // boundary
@@ -157,6 +220,11 @@ static void simulate_one(graph_t *g) {
 
 void simulate(graph_t *g, int count, FILE *ofile) {
     int i;
+
+    // init graph
+    reset_bolt(g);
+    reset_charge(g);
+    reset_boundary(g);
 
     for (i = 0; i < g->width + g->height; i++) {
         update_charge(g);

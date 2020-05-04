@@ -26,13 +26,7 @@ typedef struct {
 }graph_t;
 
 graph_t *read_graph(FILE *infile);
-void reset_charge(graph_t *g);
-void reset_boundary(graph_t *g);
-void reset_bolt(graph_t *g);
-void reset_path(graph_t *g);
-void reset_choice(graph_t *g);
 void free_graph(graph_t *g);
-void find_choice(graph_t *g, int idx);
 void print_graph(graph_t *g, FILE *outfile);
 void print_charge(graph_t *g, FILE *outfile);
 
