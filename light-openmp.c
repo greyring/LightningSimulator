@@ -75,8 +75,6 @@ int main(int argc, char *argv[]) {
     // init graph
     reset_charge(g);
     reset_boundary(g);
-    reset_bolt(g);
-    reset_path(g);
     srand(seed);
 
     fprintf(ofile, "%d %d %d\n", g->height, g->width, count);
