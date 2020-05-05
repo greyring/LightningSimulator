@@ -5,6 +5,7 @@
 #include <mpi.h>
 #include "graph.h"
 #include "mpiutil.h"
+#include "instrument.h"
 
 static zone_t *new_zone(int this_zone, int gheight, int gwidth, int start_row, int start_col, int height, int width, int eta) {
     zone_t *res = (zone_t*)calloc(1, sizeof(zone_t));
@@ -204,6 +205,7 @@ void exchange_charge(zone_t *z) {
     MPI_Request send_r[4];
     MPI_Request recv_r[4];
 
+    START_ACTIVITY(ACTIVITY_COMM);
     // send charges
     if (z->adj[0] != -1) {
         // send to up
@@ -250,15 +252,19 @@ void exchange_charge(zone_t *z) {
             MPI_Wait(&recv_r[i], MPI_STATUS_IGNORE);
         }
     }
+    FINISH_ACTIVITY(ACTIVITY_COMM);
 }
 
 void scatter_power(int *power) {
+    START_ACTIVITY(ACTIVITY_COMM);
     MPI_Bcast(power, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    FINISH_ACTIVITY(ACTIVITY_COMM);
 }
 
 void scatter_bolt(int process_count, bool mpi_master, graph_t *g, zonedef_t *zlist, zone_t *z) {
     int i, j, idx, g_idx, b_idx;
 
+    START_ACTIVITY(ACTIVITY_COMM);
     if (mpi_master) {
         for (idx = 0; idx < process_count; idx++) {
             int start_row = zlist[idx].start_row;
@@ -284,11 +290,14 @@ void scatter_bolt(int process_count, bool mpi_master, graph_t *g, zonedef_t *zli
             MPI_Wait(&zlist[idx].mpi_r, MPI_STATUS_IGNORE);
         }
     }
+    FINISH_ACTIVITY(ACTIVITY_COMM);
 }
 
 void scatter_choices(int process_count, bool mpi_master, graph_t *g, zonedef_t *zlist, zone_t *z) {
     int zid;
     MPI_Status status;
+
+    START_ACTIVITY(ACTIVITY_COMM);
     if (mpi_master) {
         for (zid = 0; zid < process_count; zid++) {
             MPI_Isend(zlist[zid].choice_idxs, zlist[zid].num_choice, MPI_INT, zid, 3, MPI_COMM_WORLD, &zlist[zid].mpi_r);
@@ -305,11 +314,13 @@ void scatter_choices(int process_count, bool mpi_master, graph_t *g, zonedef_t *
             MPI_Wait(&zlist[zid].mpi_r, MPI_STATUS_IGNORE);
         }
     }
+    FINISH_ACTIVITY(ACTIVITY_COMM);
 }
 
 void gather_probs(int process_count, bool mpi_master, graph_t *g, zonedef_t *zlist, zone_t *z) {
     int idx, b_idx, g_idx;
 
+    START_ACTIVITY(ACTIVITY_COMM);
     MPI_Isend(z->prob_buf, z->num_choice, MPI_DOUBLE, 0, 3, MPI_COMM_WORLD, &z->mpi_r);
 
     if (mpi_master) {
@@ -327,11 +338,14 @@ void gather_probs(int process_count, bool mpi_master, graph_t *g, zonedef_t *zli
     }
 
     MPI_Wait(&z->mpi_r, MPI_STATUS_IGNORE);
+    FINISH_ACTIVITY(ACTIVITY_COMM);
 }
 
 void gather_charge(int process_count, bool mpi_master, graph_t *g, zonedef_t *zlist, zone_t *z) {
     MPI_Request r;
     int b_idx, g_idx, idx;
+
+    START_ACTIVITY(ACTIVITY_COMM);
     // send charge to master
     MPI_Isend(z->charge, z->width * z->height, MPI_DOUBLE, 0, 3, MPI_COMM_WORLD, &r);
     if (mpi_master) {
@@ -355,4 +369,5 @@ void gather_charge(int process_count, bool mpi_master, graph_t *g, zonedef_t *zl
     }
 
     MPI_Wait(&r, MPI_STATUS_IGNORE);
+    FINISH_ACTIVITY(ACTIVITY_COMM);
 }

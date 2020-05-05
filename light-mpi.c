@@ -98,9 +98,8 @@ int main(int argc, char *argv[]) {
 
     simulate(process_count, mpi_master, g, zonedef_list, zone, count, ofile);
 
-    SHOW_ACTIVITY(stderr, instrument);
-
     if (mpi_master) {
+        SHOW_ACTIVITY(stderr, instrument);
         free_zonedef_list(zonedef_list, process_count);
         free_graph(g);
         fclose(ofile);

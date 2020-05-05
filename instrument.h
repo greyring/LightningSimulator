@@ -20,7 +20,7 @@
 
 /* Categories of activities */
 
-typedef enum { ACTIVITY_OVERHEAD, ACTIVITY_STARTUP, ACTIVITY_UPDATE, ACTIVITY_NEXT, ACTIVITY_RECOVER, ACTIVITY_PRINT, ACTIVITY_COUNT} activity_t;
+typedef enum { ACTIVITY_OVERHEAD, ACTIVITY_STARTUP, ACTIVITY_UPDATE, ACTIVITY_NEXT, ACTIVITY_RECOVER, ACTIVITY_PRINT, ACTIVITY_COMM, ACTIVITY_COUNT} activity_t;
 
 void track_activity(bool enable);
 void start_activity(activity_t a);

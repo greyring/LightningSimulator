@@ -178,6 +178,7 @@ static void discharge(graph_t *g, int index, int charge) {
 static void calc_prob(zone_t *z) {
     int i, idx;
 
+    START_ACTIVITY(ACTIVITY_NEXT);
     // calculate probability based on latest charge
     for (i = 0; i < z->num_choice; i++) {
         idx = z->choice_idxs[i];
@@ -187,6 +188,7 @@ static void calc_prob(zone_t *z) {
             z->prob_buf[i] = pow(z->charge[idx], z->eta);
         }
     }
+    FINISH_ACTIVITY(ACTIVITY_NEXT);
 }
 
 static int find_next(graph_t *g) {
@@ -201,22 +203,6 @@ static int find_next(graph_t *g) {
         return -1;
     return g->choice_idxs[choice];
 }
-    
-//         if (i == 0) {
-//             g->choice_probs[i] = prob;
-//         } else {
-//             g->choice_probs[i] = g->choice_probs[i - 1] + prob;
-//         }
-//     }
-
-//     // choose one as bolt
-//     breach = (double)rand()/RAND_MAX * g->choice_probs[g->num_choice - 1];
-//     choice = locate_value(breach, g->choice_probs, g->num_choice);
-
-//     if (choice == -1)
-//         return -1;
-//     return g->choice_idxs[choice];
-// }
 
 static void simulate_one(int process_count, bool mpi_master, graph_t *g, zonedef_t *zlist, zone_t *z) {
     int power;
@@ -228,8 +214,9 @@ static void simulate_one(int process_count, bool mpi_master, graph_t *g, zonedef
         reset_path(g);
         reset_choice(process_count, g, zlist);
     }
-    scatter_power(&power);
     FINISH_ACTIVITY(ACTIVITY_RECOVER);
+
+    scatter_power(&power);
 
     while (power > 0) {
         scatter_bolt(process_count, mpi_master, g, zlist, z);
@@ -240,6 +227,7 @@ static void simulate_one(int process_count, bool mpi_master, graph_t *g, zonedef
         gather_probs(process_count, mpi_master, g, zlist, z);
 
         if (mpi_master) {
+            START_ACTIVITY(ACTIVITY_NEXT);
             int next_bolt = -1;
             next_bolt = find_next(g);
             if (next_bolt != -1) {
@@ -250,15 +238,17 @@ static void simulate_one(int process_count, bool mpi_master, graph_t *g, zonedef
                 g->bolt[next_bolt] = 1;
                 find_choice(process_count, g, zlist, next_bolt);
             }
+            FINISH_ACTIVITY(ACTIVITY_NEXT);
         }
         scatter_power(&power);
     }
 
-//     // one lightning is generated
-//     START_ACTIVITY(ACTIVITY_RECOVER);
+    // one lightning is generated
     scatter_bolt(process_count, mpi_master, g, zlist, z);
+
+    START_ACTIVITY(ACTIVITY_RECOVER);
     update_boundary(z);
-//     FINISH_ACTIVITY(ACTIVITY_RECOVER);
+    FINISH_ACTIVITY(ACTIVITY_RECOVER);
 }
 
 void simulate(int process_count, bool mpi_master, graph_t *g, zonedef_t *zlist, zone_t *z, int count, FILE *ofile) {
@@ -280,12 +270,12 @@ void simulate(int process_count, bool mpi_master, graph_t *g, zonedef_t *zlist, 
     for (i = 0; i < count; i++) {
         simulate_one(process_count, mpi_master, g, zlist, z);
 
-        // START_ACTIVITY(ACTIVITY_PRINT);
-        // // print bolt
+        START_ACTIVITY(ACTIVITY_PRINT);
+        // print bolt
         if (mpi_master) {
             print_graph(g, ofile);
             fprintf(ofile, "\n");
         }
-        // FINISH_ACTIVITY(ACTIVITY_PRINT);
+        FINISH_ACTIVITY(ACTIVITY_PRINT);
     }
 }
