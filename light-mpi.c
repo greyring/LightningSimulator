@@ -4,7 +4,8 @@
 #include <stdbool.h>
 #include <mpi.h>
 #include "graph.h"
-#include "sim.h"
+#include "mpiutil.h"
+#include "sim-mpi.h"
 #include "instrument.h"
 
 static void usage(char *name) {
@@ -22,6 +23,8 @@ int main(int argc, char *argv[]) {
     FILE *gfile = NULL;
     FILE *ofile = stdout;
     graph_t *g = NULL;
+    zonedef_t *zonedef_list = NULL;
+    zone_t *zone = NULL;
     int count = 10;
     unsigned long seed = 1;
     bool instrument = false;
@@ -78,25 +81,30 @@ int main(int argc, char *argv[]) {
             exit(1);
         }
         fclose(gfile);
-        // init graph
-        reset_charge(g);
-        reset_boundary(g);
-        reset_bolt(g);
-        reset_path(g);
         srand(seed);
 
         fprintf(ofile, "%d %d %d\n", g->height, g->width, count);
+
+        // divide into zones
+        int i;
+        zonedef_list = generate_zones(g, process_count);
+        for (i = 0; i < process_count; i++) {
+            send_zone(g, zonedef_list, i);
+        }
     }
+
+    zone = setup_zone(this_zone);
     FINISH_ACTIVITY(ACTIVITY_STARTUP);
 
-    simulate(g, count, ofile);
+    simulate(process_count, mpi_master, g, zonedef_list, zone, count, ofile);
 
-    SHOW_ACTIVITY(stderr, instrument);
-
-    free_graph(g);
-    fclose(ofile);
+    if (mpi_master) {
+        SHOW_ACTIVITY(stderr, instrument);
+        free_zonedef_list(zonedef_list, process_count);
+        free_graph(g);
+        fclose(ofile);
+    }
 
     MPI_Finalize();
     return 0;
 }
-
