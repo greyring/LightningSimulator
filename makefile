@@ -32,7 +32,7 @@ light-mpi: $(MPICFILES) $(MPIHFILES)
 	$(MPICC) $(CFLAGS) $(MPI) -o $@ $(MPICFILES) $(LDFLAGS)
 
 light-cuda: $(CUDACFILES) $(HFILES) sim-cuda.o
-	$(CC) $(CFLAGS) -o $@ $(CUDACFILES) $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $(CUDACFILES) sim-cuda.o $(LDFLAGS)
 
 sim-cuda.o: $(CUDAFILES)
 	$(NVCC) $(NVCCFLAGS) $(CUDAFILES) -c -o $@
