@@ -6,7 +6,6 @@
 #include <driver_functions.h>
 #include "sim.h"
 #include "instrument.h"
-#include "CycleTimer.h"
 
 
 
