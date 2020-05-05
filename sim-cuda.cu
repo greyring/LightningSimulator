@@ -37,6 +37,7 @@ struct GlobalConstants {
 };
 
 __constant__ GlobalConstants cuConstGraph;
+GlobalConstants params;
 
 /*
   Linear search
@@ -223,18 +224,18 @@ static void discharge(graph_t *g, int index, int charge) {
     while (index != -1 && count > 0) {
         count -= 1;
         g->bolt[index] += charge;
-        cudaMemcpy(&(cuConstGraph.bolt[index]), &(g->bolt[index]), sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(&(params.bolt[index]), &(g->bolt[index]), sizeof(int), cudaMemcpyHostToDevice);
         index = g->path[index];
     }
 }
 static __inline__ void update_kernel_choosed(graph_t *g, int i, int j){
     int idx = i * g->width + j;
     if(i >= 0 && i < g->height && j >= 0 && j < g->height && g->bolt[idx] <= 0){
-        cudaMemcpy(&(cuConstGraph.choosed[idx]), &(g->choosed[idx]), sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(&(params.choosed[idx]), &(g->choosed[idx]), sizeof(int), cudaMemcpyHostToDevice);
     }
 }
 static __inline__ void update_kernel_state(graph_t *g, int next_bolt){
-    cudaMemcpy(&(cuConstGraph.bolt[next_bolt]), &(g->bolt[next_bolt]), sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(&(params.bolt[next_bolt]), &(g->bolt[next_bolt]), sizeof(int), cudaMemcpyHostToDevice);
     int i = next_bolt / g->width;
     int j = next_bolt / g->height;
     update_kernel_choosed(g, i-1, j);
@@ -247,7 +248,7 @@ static void find_next(graph_t *g, int* power) {
     double breach;
 
     START_ACTIVITY(ACTIVITY_NEXT);
-    cudaMemcpy(g->choice_probs, cuConstGraph.choice_probs, sizeof(double)*g->num_choice, cudaMemcpyDeviceToHost);
+    cudaMemcpy(g->choice_probs, params.choice_probs, sizeof(double)*g->num_choice, cudaMemcpyDeviceToHost);
     // calculate probability based on latest charge
     cudaDeviceSynchronize();
     for(idx = 0; idx < g->num_choice; idx++){
@@ -280,8 +281,8 @@ static void simulate_one(graph_t *g) {
     reset_bolt(g);
     reset_path(g);
     reset_choice(g);
-    cudaMemcpy(cuConstGraph.bolt, g->bolt, sizeof(int)*graphSize, cudaMemcpyHostToDevice);
-    cudaMemcpy(cuConstGraph.choosed, g->choosed, sizeof(int)*graphSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(params.bolt, g->bolt, sizeof(int)*graphSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(params.choosed, g->choosed, sizeof(int)*graphSize, cudaMemcpyHostToDevice);
     cudaDeviceSynchronize();
     FINISH_ACTIVITY(ACTIVITY_RECOVER);
 
@@ -299,7 +300,6 @@ void simulate(graph_t *g, int count, FILE *ofile) {
 
     int graphSize = g->width*g->height;
 
-    GlobalConstants params;
     double *cuda_charge_buffer;
     double *cuda_charge;
     double *cuda_boundary;
