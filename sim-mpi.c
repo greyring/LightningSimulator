@@ -126,6 +126,7 @@ static void reset_choice(int process_count, graph_t *g, zonedef_t *zlist) {
         find_choice(process_count, g, zlist, i);
     }
 }
+
 // get bolt at x, y
 // if bolt < 0.0, charge = 1.0 // boundary
 // if bolt > 0.0, charge = 0.0 // boundary

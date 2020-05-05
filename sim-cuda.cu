@@ -152,12 +152,16 @@ __global__ void kernel_update_value(){
         }
         if(threadIdx.x == blockDim.x-1){
             old_charge[GET_INDEX(threadIdx.y+1, threadIdx.x+2, blockDim.x+2)] = imageX < cuConstGraph.width-1 ? cuConstGraph.charge[GET_INDEX(imageY, imageX+1, cuConstGraph.width)] : 0;
+        } else if (threadIdx.x == cuConstGraph.width - 1) {
+            old_charge[GET_INDEX(threadIdx.y+1, threadIdx.x+2, blockDim.x+2)] = 0;
         }
         if(threadIdx.y == 0){
             old_charge[GET_INDEX(threadIdx.y, threadIdx.x+1, blockDim.x+2)] = imageY > 0 ? cuConstGraph.charge[GET_INDEX(imageY-1, imageX, cuConstGraph.width)] : 0;
         }
         if(threadIdx.y == blockDim.y-1){
             old_charge[GET_INDEX(threadIdx.y+2, threadIdx.x+1, blockDim.x+2)] = imageY < cuConstGraph.height-1 ? cuConstGraph.charge[GET_INDEX(imageY+1, imageX, cuConstGraph.width)] : 0;
+        } else if (threadIdx.y == cuConstGraph.height - 1) {
+            old_charge[GET_INDEX(threadIdx.y+2, threadIdx.x+1, blockDim.x+2)] = 0;
         }
     }
     __syncthreads();
@@ -168,7 +172,7 @@ __global__ void kernel_update_value(){
         }else if(cuConstGraph.bolt[globalIdx] > 0){
             new_charge[linearThreadIndex] = 0.0;
         }else{
-            new_charge[linearThreadIndex] = cuConstGraph.boundary[globalIdx]+ old_charge[GET_INDEX(threadIdx.y+1, threadIdx.x, blockDim.x+2)] + old_charge[GET_INDEX(threadIdx.y+1, threadIdx.x+2, blockIdx.x+2)] + old_charge[GET_INDEX(threadIdx.y, threadIdx.x+1, blockDim.x+2)] + old_charge[GET_INDEX(threadIdx.y+2, threadIdx.x+1, blockDim.x+2)];
+            new_charge[linearThreadIndex] = cuConstGraph.boundary[globalIdx]+ old_charge[GET_INDEX(threadIdx.y+1, threadIdx.x, blockDim.x+2)] + old_charge[GET_INDEX(threadIdx.y+1, threadIdx.x+2, blockDim.x+2)] + old_charge[GET_INDEX(threadIdx.y, threadIdx.x+1, blockDim.x+2)] + old_charge[GET_INDEX(threadIdx.y+2, threadIdx.x+1, blockDim.x+2)];
             new_charge[linearThreadIndex] /= 4;
         }
         cuConstGraph.charge_buffer[globalIdx] = new_charge[linearThreadIndex];
@@ -240,35 +244,35 @@ static __inline__ void update_kernel_choosed(graph_t *g, int i, int j){
     int idx = i * g->width + j;
     if(i >= 0 && i < g->height && j >= 0 && j < g->height && g->bolt[idx] <= 0){
         cudaMemcpy(&(params.choosed[idx]), &(g->choosed[idx]), sizeof(int), cudaMemcpyHostToDevice);
-        cudaMemcpy(&(params.choosed[idx]), &(choice_map[idx]), sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(&(params.choice_inv_map[idx]), &(choice_map[idx]), sizeof(int), cudaMemcpyHostToDevice);
     }
 
 }
 static __inline__ void update_kernel_state(graph_t *g, int next_bolt){
     cudaMemcpy(&(params.bolt[next_bolt]), &(g->bolt[next_bolt]), sizeof(int), cudaMemcpyHostToDevice);
     int i = next_bolt / g->width;
-    int j = next_bolt / g->height;
+    int j = next_bolt % g->width;
     update_kernel_choosed(g, i-1, j);
     update_kernel_choosed(g, i+1, j);
     update_kernel_choosed(g, i, j-1);
     update_kernel_choosed(g, i, j+1);
 }
 static void find_next(graph_t *g, int* power) {
-    int idx, next_bolt;
+    int idx, choice, next_bolt;
     double breach;
 
     START_ACTIVITY(ACTIVITY_NEXT);
     cudaMemcpy(g->choice_probs, params.choice_probs, sizeof(double)*g->num_choice, cudaMemcpyDeviceToHost);
     // calculate probability based on latest charge
     cudaDeviceSynchronize();
-    for(idx = 0; idx < g->num_choice; idx++){
+    for(idx = 1; idx < g->num_choice; idx++){
         g->choice_probs[idx] += g->choice_probs[idx-1];
     }
     breach = (double)rand()/RAND_MAX * g->choice_probs[g->num_choice - 1];
-    next_bolt = locate_value(breach, g->choice_probs, g->num_choice);
+    choice = locate_value(breach, g->choice_probs, g->num_choice);
     // choose one as bolt
-    if (next_bolt != -1){
-        printf("next bolt: %d\n", next_bolt);
+    if (choice != -1){
+        next_bolt = g->choice_idxs[choice];
         if (g->bolt[next_bolt] < 0) {
             *power += g->bolt[next_bolt];
             discharge(g, next_bolt, -g->bolt[next_bolt]);
@@ -342,6 +346,7 @@ void simulate(graph_t *g, int count, FILE *ofile) {
     cudaMemcpy(cuda_charge_buffer, g->charge_buffer, sizeof(double)*graphSize, cudaMemcpyHostToDevice);
     cudaMemcpy(cuda_charge, g->charge, sizeof(double)*graphSize, cudaMemcpyHostToDevice);
     cudaMemcpy(cuda_boundary, g->boundary, sizeof(double)*graphSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(cuda_bolt, g->bolt, sizeof(int)*graphSize, cudaMemcpyHostToDevice);
 
     params.charge = cuda_charge;
     params.charge_buffer = cuda_charge_buffer;
@@ -349,6 +354,7 @@ void simulate(graph_t *g, int count, FILE *ofile) {
     params.bolt = cuda_bolt;
     params.choice_probs = cuda_choice_probs;
     params.choosed = cuda_choosed;
+    params.choice_inv_map = cuda_choice_map;
 
     cudaMemcpyToSymbol(cuConstGraph, &params, sizeof(GlobalConstants));
     cudaDeviceSynchronize();
