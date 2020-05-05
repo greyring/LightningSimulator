@@ -32,12 +32,15 @@ struct GlobalConstants {
     int *bolt;
 
     double* choice_probs;
+    int* choice_inv_map;
     int* choosed;
 
 };
 
 __constant__ GlobalConstants cuConstGraph;
 GlobalConstants params;
+
+int *choice_map;
 
 /*
   Linear search
@@ -102,6 +105,7 @@ static void choose_helper(graph_t *g, int bolt_idx, int i, int j) {
         g->choosed[idx] == 0 && g->bolt[idx] <= 0) {
         g->choosed[idx] = 1;
         g->choice_idxs[g->num_choice] = idx;
+        choice_map[idx] = g->num_choice;
         g->num_choice++;
         g->path[idx] = bolt_idx;
     }
@@ -169,7 +173,7 @@ __global__ void kernel_update_value(){
         }
         cuConstGraph.charge_buffer[globalIdx] = new_charge[linearThreadIndex];
         if(cuConstGraph.choosed[globalIdx] == 1){
-            cuConstGraph.choice_probs[globalIdx] = cuConstGraph.bolt[globalIdx] > 0 ? 0 : pow(new_charge[linearThreadIndex], cuConstGraph.eta);
+            cuConstGraph.choice_probs[cuConstGraph.choice_inv_map[globalIdx]] = cuConstGraph.bolt[globalIdx] > 0 ? 0 : pow(new_charge[linearThreadIndex], cuConstGraph.eta);
         }
     }
     __syncthreads();
@@ -179,18 +183,22 @@ __global__ void kernel_replace_charge(){
     int imageX = blockIdx.x * blockDim.x + threadIdx.x;
     int imageY = blockIdx.y * blockDim.y + threadIdx.y;
     int globalIdx = GET_INDEX(imageY, imageX, cuConstGraph.width);
-    
-    cuConstGraph.charge[globalIdx] = cuConstGraph.charge_buffer[globalIdx];
+    if(imageX < cuConstGraph.width && imageY < cuConstGraph.height){
+        cuConstGraph.charge[globalIdx] = cuConstGraph.charge_buffer[globalIdx];
+    }
 }
 __global__ void kernel_update_boundary(){
     int imageX = blockIdx.x * blockDim.x + threadIdx.x;
     int imageY = blockIdx.y * blockDim.y + threadIdx.y;
     int globalIdx = GET_INDEX(imageY, imageX, cuConstGraph.width);
-    if (cuConstGraph.bolt[globalIdx] > 1) {
-        cuConstGraph.boundary[globalIdx] = cuConstGraph.bolt[globalIdx] * 0.0001;
-    } else {
-        cuConstGraph.boundary[globalIdx] = 0;
+    if(imageX < cuConstGraph.width && imageY < cuConstGraph.height){
+        if (cuConstGraph.bolt[globalIdx] > 1) {
+            cuConstGraph.boundary[globalIdx] = cuConstGraph.bolt[globalIdx] * 0.0001;
+        } else {
+            cuConstGraph.boundary[globalIdx] = 0;
+        }
     }
+
 }
 // get bolt at x, y
 // if bolt < 0.0, charge = 1.0 // boundary
@@ -232,7 +240,9 @@ static __inline__ void update_kernel_choosed(graph_t *g, int i, int j){
     int idx = i * g->width + j;
     if(i >= 0 && i < g->height && j >= 0 && j < g->height && g->bolt[idx] <= 0){
         cudaMemcpy(&(params.choosed[idx]), &(g->choosed[idx]), sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(&(params.choosed[idx]), &(choice_map[idx]), sizeof(int), cudaMemcpyHostToDevice);
     }
+
 }
 static __inline__ void update_kernel_state(graph_t *g, int next_bolt){
     cudaMemcpy(&(params.bolt[next_bolt]), &(g->bolt[next_bolt]), sizeof(int), cudaMemcpyHostToDevice);
@@ -258,8 +268,9 @@ static void find_next(graph_t *g, int* power) {
     next_bolt = locate_value(breach, g->choice_probs, g->num_choice);
     // choose one as bolt
     if (next_bolt != -1){
+        printf("next bolt: %d\n", next_bolt);
         if (g->bolt[next_bolt] < 0) {
-            power += g->bolt[next_bolt];
+            *power += g->bolt[next_bolt];
             discharge(g, next_bolt, -g->bolt[next_bolt]);
             cudaDeviceSynchronize();
         }
@@ -283,6 +294,7 @@ static void simulate_one(graph_t *g) {
     reset_choice(g);
     cudaMemcpy(params.bolt, g->bolt, sizeof(int)*graphSize, cudaMemcpyHostToDevice);
     cudaMemcpy(params.choosed, g->choosed, sizeof(int)*graphSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(params.choice_inv_map, choice_map, sizeof(int)*graphSize, cudaMemcpyHostToDevice);
     cudaDeviceSynchronize();
     FINISH_ACTIVITY(ACTIVITY_RECOVER);
 
@@ -306,6 +318,8 @@ void simulate(graph_t *g, int count, FILE *ofile) {
     int *cuda_bolt;
     double* cuda_choice_probs;
     int* cuda_choosed;
+    int* cuda_choice_map;
+
 
     reset_bolt(g);
     reset_charge(g);
@@ -315,6 +329,7 @@ void simulate(graph_t *g, int count, FILE *ofile) {
     params.height = g->height;
     params.eta = g->eta;
     
+    choice_map = (int*)malloc(sizeof(int)*graphSize);
 
     cudaMalloc(&cuda_charge_buffer, sizeof(double)*graphSize);
     cudaMalloc(&cuda_charge, sizeof(double)*graphSize);
@@ -322,7 +337,7 @@ void simulate(graph_t *g, int count, FILE *ofile) {
     cudaMalloc(&cuda_bolt, sizeof(int)*graphSize);
     cudaMalloc(&cuda_choice_probs, sizeof(double)*graphSize);
     cudaMalloc(&cuda_choosed, sizeof(int)*graphSize);
-
+    cudaMalloc(&cuda_choice_map, sizeof(int)*graphSize);
 
     cudaMemcpy(cuda_charge_buffer, g->charge_buffer, sizeof(double)*graphSize, cudaMemcpyHostToDevice);
     cudaMemcpy(cuda_charge, g->charge, sizeof(double)*graphSize, cudaMemcpyHostToDevice);
@@ -341,7 +356,7 @@ void simulate(graph_t *g, int count, FILE *ofile) {
     for (i = 0; i < g->width + g->height; i++) {
         update_charge(g);
     }
-
+   
     // generate lightnings
     for (i = 0; i < count; i++) {
         simulate_one(g);
