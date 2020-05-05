@@ -1,0 +1,445 @@
+#include <math.h>
+#include <stdlib.h>
+#include "graph.h"
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <driver_functions.h>
+#include "sim.h"
+#include "instrument.h"
+#include "CycleTimer.h"
+
+
+
+
+/* What is the crossover between binary and linear search */
+#define BINARY_THRESHOLD 4
+#define BLOCK_HEIGHT 32
+#define BLOCK_WIDTH 32
+#define BLOCK_SIZE (BLOCK_HEIGHT*BLOCK_WIDTH)
+#define PLUS_BLOCK_SIZE ((BLOCK_HEIGHT+2)*(BLOCK_WIDTH+2))
+#define GET_INDEX(row, col, width) ((row)*(width) + (col))
+
+// This stores the global constants
+struct GlobalConstants {
+
+    int width;
+    int height;
+    int eta;
+
+    double *charge;
+    double *charge_buffer;
+
+    double *boundary;
+    int *bolt;
+
+    double* choice_probs;
+    int* choosed;
+
+};
+
+__constant__ GlobalConstants cuConstGraph;
+
+/*
+  Linear search
+ */
+static inline int locate_value_linear(double target, double *list, int len) {
+    int i;
+    for (i = 0; i < len; i++)
+	    if (target < list[i])
+	        return i;
+    /* Shouldn't get here */
+    return -1;
+}
+
+/*
+  Binary search down to threshold, and then linear
+ */
+static inline int locate_value(double target, double *list, int len) {
+    int left = 0;
+    int right = len-1;
+    while (left < right) {
+	    if (right-left+1 < BINARY_THRESHOLD)
+	        return left + locate_value_linear(target, list+left, right-left+1);
+	    int mid = left + (right-left)/2;
+	    if (target < list[mid])
+	        right = mid;
+	    else
+	        left = mid+1;
+    }
+    return right;
+}
+static void reset_charge(graph_t *g) {
+    int i;
+    for (i = 0; i < g->height * g->width; i++) {
+        g->charge[i] = g->charge_buffer[i] = 0;
+    }
+}
+
+static void reset_boundary(graph_t *g) {
+    int i;
+    for (i = 0; i < g->height * g->width; i++) {
+        g->boundary[i] = 0.0;
+    }
+}
+
+static void reset_bolt(graph_t *g) {
+    int i;
+    for (i = 0; i < g->height * g->width; i++) {
+        g->bolt[i] = g->reset_bolt[i];
+    }
+}
+
+static void reset_path(graph_t *g) {
+    int i;
+    for (i = 0; i < g->height * g->width; i++) {
+        g->path[i] = -1;
+    }
+}
+
+static void choose_helper(graph_t *g, int bolt_idx, int i, int j) {
+    int idx = i * g->width + j;
+    if (i >= 0 && i < g->height && j >= 0 && j < g->width &&
+        g->choosed[idx] == 0 && g->bolt[idx] <= 0) {
+        g->choosed[idx] = 1;
+        g->choice_idxs[g->num_choice] = idx;
+        g->num_choice++;
+        g->path[idx] = bolt_idx;
+    }
+}
+
+static void find_choice(graph_t *g, int idx) {
+    int i, j;
+    if (g->bolt[idx] > 0) {
+        i = idx / g->width;
+        j = idx % g->width;
+        choose_helper(g, idx, i - 1, j);
+        choose_helper(g, idx, i, j - 1);
+        choose_helper(g, idx, i, j + 1);
+        choose_helper(g, idx, i + 1, j);
+    }
+}
+
+static void reset_choice(graph_t *g) {
+    int i;
+    g->num_choice = 0;
+    for (i = 0; i < g->height * g->width; i++) {
+        g->choosed[i] = 0;
+    }
+    // get choices idxs
+    for (i = 0; i < g->width * g->height; i++) {
+        find_choice(g, i);
+    }
+}
+
+
+__global__ void kernel_update_value(){
+    int imageX = blockIdx.x * blockDim.x + threadIdx.x;
+    int imageY = blockIdx.y * blockDim.y + threadIdx.y;
+    int globalIdx = GET_INDEX(imageY, imageX, cuConstGraph.width);
+    int linearThreadIndex = GET_INDEX(threadIdx.y+1, threadIdx.x+1, blockDim.x);
+    double prob;
+    __shared__ double old_charge[PLUS_BLOCK_SIZE];
+    __shared__ double new_charge[BLOCK_SIZE];
+    
+    if(imageX < cuConstGraph.width && imageY < cuConstGraph.height){
+        
+        old_charge[linearThreadIndex] = cuConstGraph.charge[globalIdx];
+        if(threadIdx.x == 0){
+            old_charge[GET_INDEX(threadIdx.y+1, threadIdx.x, blockDim.x)] = imageX > 0 ? cuConstGraph.charge[GET_INDEX(imageY, imageX-1, cuConstGraph.width)] : 0;
+        }
+        if(threadIdx.x == blockDim.x-1){
+            old_charge[GET_INDEX(threadIdx.y+1, threadIdx.x+2, blockDim.x)] = imageX < cuConstGraph.width-1 ? cuConstGraph.charge[GET_INDEX(imageY, imageX+1, cuConstGraph.width)] : 0;
+        }
+        if(threadIdx.y == 0){
+            old_charge[GET_INDEX(threadIdx.y, threadIdx.x+1, blockDim.x)] = imageY > 0 ? cuConstGraph.charge[GET_INDEX(imageY-1, imageX, cuConstGraph.width)] : 0;
+        }
+        if(threadIdx.y == blockDim.y-1){
+            old_charge[GET_INDEX(threadIdx.y+2, threadIdx.x+1, blockDim.x)] = imageY < cuConstGraph.height-1 ? cuConstGraph.charge[GET_INDEX(imageY+1, imageX, cuConstGraph.width)] : 0;
+        }
+    }
+    __syncthreads();
+    if(imageX < cuConstGraph.width && imageY < cuConstGraph.height){
+        linearThreadIndex = GET_INDEX(threadIdx.y, threadIdx.x, blockDim.x);
+        if(cuConstGraph.bolt[globalIdx] < 0){
+            new_charge[linearThreadIndex] = 1.0;
+        }else if(cuConstGraph.bolt[globalIdx] > 0){
+            new_charge[linearThreadIndex] = 0.0;
+        }else{
+            new_charge[linearThreadIndex] = cuConstGraph.boundary[globalIdx]+ old_charge[GET_INDEX(threadIdx.y+1, threadIdx.x, blockDim.x)] + old_charge[GET_INDEX(threadIdx.y+1, threadIdx.x+2, blockIdx.x)] + old_charge[GET_INDEX(threadIdx.y, threadIdx.x+1, blockDim.x)] + old_charge[GET_INDEX(threadIdx.y+2, threadIdx.x+1, blockDim.x)];
+            new_charge[linearThreadIndex] /= 4;
+        }
+        cuConstGraph.charge_buffer[globalIdx] = new_charge[linearThreadIndex];
+        if(cuConstGraph.choosed[globalIdx] == 1){
+            cuConstGraph.choice_probs[globalIdx] = cuConstGraph.bolt[globalIdx] > 0 ? 0 : pow(new_charge[linearThreadIndex], cuConstGraph.eta);
+        }
+    }
+    __syncthreads();
+}
+
+__global__ void kernel_replace_charge(){
+    int imageX = blockIdx.x * blockDim.x + threadIdx.x;
+    int imageY = blockIdx.y * blockDim.y + threadIdx.y;
+    int globalIdx = GET_INDEX(imageY, imageX, cuConstGraph.width);
+    
+    cuConstGraph.charge[globalIdx] = cuConstGraph.charge_buffer[globalIdx];
+}
+__global__ void kernel_update_boundary(){
+    int imageX = blockIdx.x * blockDim.x + threadIdx.x;
+    int imageY = blockIdx.y * blockDim.y + threadIdx.y;
+    int globalIdx = GET_INDEX(imageY, imageX, cuConstGraph.width);
+    if (cuConstGraph.bolt[globalIdx] > 1) {
+        cuConstGraph.boundary[globalIdx] = cuConstGraph.bolt[globalIdx] * 0.0001;
+    } else {
+        cuConstGraph.boundary[globalIdx] = 0;
+    }
+}
+// get bolt at x, y
+// if bolt < 0.0, charge = 1.0 // boundary
+// if bolt > 0.0, charge = 0.0 // boundary
+// else charge = (boundary + neighbor's charge) / 4
+static void update_charge() {
+    int i, j;
+    int idx;
+    double sum;
+    dim3 blockDim(BLOCK_WIDTH, BLOCK_HEIGHT); // 16*16 = 256
+    dim3 gridDim((imageWidth+blockDim.x-1)/blockDim.x, (imageHeight+blockDim.y-1)/blockDim.y);
+    START_ACTIVITY(ACTIVITY_UPDATE);
+    kernel_update_value<<<gridDim, blockDim>>>();
+    cudaDeviceSynchronize();
+
+    // replace origin
+    kernel_replace_charge<<<gridDim, blockDim>>>();
+
+    cudaDeviceSynchronize();
+    FINISH_ACTIVITY(ACTIVITY_UPDATE);
+}
+static void update_boundary(){
+    START_ACTIVITY(ACTIVITY_RECOVER);
+    dim3 blockDim(BLOCK_WIDTH, BLOCK_HEIGHT); // 16*16 = 256
+    dim3 gridDim((imageWidth+blockDim.x-1)/blockDim.x, (imageHeight+blockDim.y-1)/blockDim.y);
+    kernel_update_boundary<<<gridDim, blockDim>>>();
+    cudaDeviceSynchronize();
+    FINISH_ACTIVITY(ACTIVITY_RECOVER);
+
+}
+// add charge to bolt along the path
+static void discharge(graph_t *g, int index, int charge) {
+    int count = 500;
+    while (index != -1 && count > 0) {
+        count -= 1;
+        g->bolt[index] += charge;
+        cudaMemcpy(&(g->bolt[index]), &(cuConstGraph.bolt[index]), sizeof(int), cudaMemcpyHostToDevice);
+        index = g->path[index];
+    }
+}
+static __inline__ void update_kernel_choosed(graph_t *g, int i, int j){
+    int idx = i * g->width + j;
+    if(i >= 0 && i < g->height && j >= 0 && j < g->height && g->bolt[idx] <= 0){
+        cudaMemcpy(&(g->choosed[idx]), &(cuConstGraph.choosed[idx]), cudaMemcpyHostToDevice);
+    }
+}
+static __inline__ void update_kernel_state(graph_t *g, int next_bolt){
+    cudaMemcpy(&(g->bolt[next_bolt]), &(cuConstGraph.bolt[next_bolt]), sizeof(int), cudaMemcpyHostToDevice);
+    int i = next_bolt / g->width;
+    int j = next_bolt / g->height;
+    update_kernel_choosed(g, i-1, j);
+    update_kernel_choosed(g, i+1, j);
+    update_kernel_choosed(g, i, j-1);
+    update_kernel_choosed(g, i, j+1);
+}
+static void find_next(graph_t *g) {
+    int idx, next_bolt, i, j;
+    double prob;
+    START_ACTIVITY(ACTIVITY_NEXT);
+    cudaMemcpy(g->choice_probs, cuConstGraph->choice_probs, sizeof(double)*graphSize, cudaMemcpyDeviceToHost);
+    // calculate probability based on latest charge
+    cudaDeviceSynchronize();
+    for(idx = 0; idx < g->num_choice; idx++){
+        g->choice_probs[idx] += g->choice_probs[idx-1];
+    }
+    breach = (double)rand()/RAND_MAX * g->choice_probs[g->num_choice - 1];
+    next_bolt = locate_value(breach, g->choice_probs, g->num_choice);
+    // choose one as bolt
+    if (next_bolt != -1){
+        if (g->bolt[next_bolt] < 0) {
+            power += g->bolt[next_bolt];
+            discharge(g, next_bolt, -g->bolt[next_bolt]);
+            cudaDeviceSynchronize();
+        }
+        g->bolt[next_bolt] = 1;
+        find_choice(g, next_bolt);
+        //copy new bolt and the choose;
+        update_kernel_state(g, next_bolt);
+    }
+    cudaDeviceSynchronize();
+    FINISH_ACTIVITY(ACTIVITY_NEXT);
+}
+
+static void simulate_one(graph_t *g) {
+    int power = g->power;
+    int idx, next_bolt;
+    double breach, 
+
+    START_ACTIVITY(ACTIVITY_RECOVER);
+    reset_bolt(g);
+    reset_path(g);
+    reset_choice(g);
+    cudaMemcpy(cuConstGraph.bolt, g->bolt, sizeof(int)*graphSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(cuConstGraph.choosed, g->choosed, sizeof(int)*graphSize, cudaMemcpyHostToDevice);
+    cudaDeviceSynchronize();
+    FINISH_ACTIVITY(ACTIVITY_RECOVER);
+
+    while (power > 0) {
+        update_charge();
+        find_next(g);
+    }
+    // one lightning is generated
+    update_boundary();
+    
+}
+
+void simulate(graph_t *g, int count, FILE *ofile) {
+    int i;
+
+    int graphSize = g->width*g->height;
+
+    GlobalConstants params;
+    double *cuda_charge_buffer;
+    double *cuda_charge;
+    double *cuda_boundary;
+    int *cuda_reset_bolt;
+    int *cuda_bolt;
+    double* cuda_choice_probs;
+    int *cuda_num_choice;
+    int *cuda_choice_idx;
+    int* cuda_choosed;
+    int* cuda_path;
+
+    reset_bolt(g);
+    reset_charge(g);
+    reset_boundary(g);
+    
+    params.width = g->width;
+    params.height = g->height;
+    params.eta = g->eta;
+    
+
+    cudaMalloc(&cuda_charge_buffer, sizeof(double)*graphSize);
+    cudaMalloc(&cuda_charge, sizeof(double)*graphSize);
+    cudaMalloc(&cuda_boundary, sizeof(double)*graphSize);
+    cudaMalloc(&cuda_bolt, sizeof(int)*graphSize);
+    cudaMalloc(&cuda_choice_probs, sizeof(double)*graphSize);
+    cudaMalloc(&cuda_choosed, sizeof(int)*graphSize);
+
+
+    cudaMemcpy(cuda_charge_buffer, g->charge_buffer, sizeof(double)*graphSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(cuda_charge, g->charge, sizeof(double)*graphSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(cuda_boundary, g->boundary, sizeof(double)*graphSize, cudaMemcpyHostToDevice);
+
+    params.charge = cuda_charge;
+    params.charge_buffer = cuda_charge_buffer;
+    params.boundary = cuda_boundary;
+    params.bolt = cuda_bolt;
+    params.choice_probs = cuda_choice_probs;
+    params.choosed = cuda_choosed;
+
+    cudaMemcpyToSymbol(cuConstGraph, &params, sizeof(GlobalConstants));
+    cudaDeviceSynchronize();
+   
+    for (i = 0; i < g->width + g->height; i++) {
+        update_charge();
+    }
+
+    // generate lightnings
+    for (i = 0; i < count; i++) {
+        simulate_one(g);
+
+        START_ACTIVITY(ACTIVITY_PRINT);
+        // print bolt
+        print_graph(g, ofile);
+        fprintf(ofile, "\n");
+        FINISH_ACTIVITY(ACTIVITY_PRINT);
+    }
+}
+
+
+// __global__ void cuda_reset_charge(graph_t *g) {
+    
+//     int imageX = blockIdx.x * blockDim.x + threadIdx.x;
+//     int imageY = blockIdx.y * blockDim.y + threadIdx.y;
+//     int idx = imageX*cuConstGraph.width+imageY;
+//     if (imageX >= cuConstGraph.width || imageY >= cuConstGraph.height)
+//         return;
+//     cuConstGraph.charge[idx] = cuConstGraph.charge_buffer[idx] = 0;
+    
+// }
+
+// __global__ void cuda_reset_boundary(graph_t *g) {
+//     int imageX = blockIdx.x * blockDim.x + threadIdx.x;
+//     int imageY = blockIdx.y * blockDim.y + threadIdx.y;
+//     int idx = imageX*cuConstGraph.width+imageY;
+//     if (imageX >= cuConstGraph.width || imageY >= cuConstGraph.height)
+//         return;
+    
+//     cuConstGraph.boundary[idx] = 0.0;
+// }
+
+// __global__ void cuda_reset_bolt(graph_t *g) {
+//     int imageX = blockIdx.x * blockDim.x + threadIdx.x;
+//     int imageY = blockIdx.y * blockDim.y + threadIdx.y;
+//     int idx = imageX*cuConstGraph.width+imageY;
+//     if (imageX >= cuConstGraph.width || imageY >= cuConstGraph.height)
+//         return;
+//     cuConstGraph.bolt[idx] = cuConstGraph.reset_bolt[idx];
+    
+// }
+
+// __global__ void cuda_reset_path() {
+//     int imageX = blockIdx.x * blockDim.x + threadIdx.x;
+//     int imageY = blockIdx.y * blockDim.y + threadIdx.y;
+//     int idx = imageX*cuConstGraph.width+imageY;
+//     if (imageX >= cuConstGraph.width || imageY >= cuConstGraph.height)
+//         return;
+//     cuConstGraph.path[idx] = -1;
+// }
+
+// __device__ __inline__  void 
+// cuda_choose_helper(int bolt_idx, int i, int j) {
+//     int idx = i * cuConstGraph.width + j;
+//     if (i >= 0 && i < cuConstGraph.height && j >= 0 && j < cuConstGraph.width && cuConstGraph.choosed[idx] == 0 && cuConstGraph.bolt[idx] <= 0) {
+//         cuConstGraph.choosed[idx] = 1;
+//         cuConstGraph.path[idx] = bolt_idx;
+
+//         // atomic update the num choice
+//         int old_choice = atomicAdd(cuConstGraph.num_choice, 1);
+//         cuConstGraph.choice_idxs[old_choice] = idx;
+//     }
+// }
+
+// __device__ __inline__  void 
+// cuda_find_choice(int idx) {
+//     if (cuConstGraph.bolt[idx] > 0) {
+//         int i, j;
+//         i = idx / cuConstGraph.width;
+//         j = idx % cuConstGraph.width;
+//         choose_helper(idx, i - 1, j);
+//         choose_helper(idx, i, j - 1);
+//         choose_helper(idx, i, j + 1);
+//         choose_helper(idx, i + 1, j);
+//     }
+// }
+
+
+// __global__ void cuda_reset_choice() {
+//     int imageX = blockIdx.x * blockDim.x + threadIdx.x;
+//     int imageY = blockIdx.y * blockDim.y + threadIdx.y;
+//     int idx = imageX*cuConstGraph.width+imageY;
+//     if (imageX >= cuConstGraph.width || imageY >= cuConstGraph.height)
+//         return;
+
+//     cuConstGraph.num_choice = 0;
+//     cuConstGraph.choosed[idx] = 0;
+//     // get choices idxs
+//     find_choice(idx);
+    
+// }
