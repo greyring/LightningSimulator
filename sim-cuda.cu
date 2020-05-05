@@ -264,7 +264,6 @@ static void find_next(graph_t *g, int* power) {
     START_ACTIVITY(ACTIVITY_NEXT);
     cudaMemcpy(g->choice_probs, params.choice_probs, sizeof(double)*g->num_choice, cudaMemcpyDeviceToHost);
     // calculate probability based on latest charge
-    cudaDeviceSynchronize();
     for(idx = 1; idx < g->num_choice; idx++){
         g->choice_probs[idx] += g->choice_probs[idx-1];
     }
@@ -276,14 +275,12 @@ static void find_next(graph_t *g, int* power) {
         if (g->bolt[next_bolt] < 0) {
             *power += g->bolt[next_bolt];
             discharge(g, next_bolt, -g->bolt[next_bolt]);
-            cudaDeviceSynchronize();
         }
         g->bolt[next_bolt] = 1;
         find_choice(g, next_bolt);
         //copy new bolt and the choose;
         update_kernel_state(g, next_bolt);
     }
-    cudaDeviceSynchronize();
     FINISH_ACTIVITY(ACTIVITY_NEXT);
 }
 
@@ -299,7 +296,6 @@ static void simulate_one(graph_t *g) {
     cudaMemcpy(params.bolt, g->bolt, sizeof(int)*graphSize, cudaMemcpyHostToDevice);
     cudaMemcpy(params.choosed, g->choosed, sizeof(int)*graphSize, cudaMemcpyHostToDevice);
     cudaMemcpy(params.choice_inv_map, choice_map, sizeof(int)*graphSize, cudaMemcpyHostToDevice);
-    cudaDeviceSynchronize();
     FINISH_ACTIVITY(ACTIVITY_RECOVER);
 
     while (power > 0) {
@@ -335,6 +331,7 @@ void simulate(graph_t *g, int count, FILE *ofile) {
     
     choice_map = (int*)malloc(sizeof(int)*graphSize);
 
+    start_activity(ACTIVITY_STARTUP);
     cudaMalloc(&cuda_charge_buffer, sizeof(double)*graphSize);
     cudaMalloc(&cuda_charge, sizeof(double)*graphSize);
     cudaMalloc(&cuda_boundary, sizeof(double)*graphSize);
@@ -357,7 +354,7 @@ void simulate(graph_t *g, int count, FILE *ofile) {
     params.choice_inv_map = cuda_choice_map;
 
     cudaMemcpyToSymbol(cuConstGraph, &params, sizeof(GlobalConstants));
-    cudaDeviceSynchronize();
+    finish_activity(ACTIVITY_STARTUP);
    
     for (i = 0; i < g->width + g->height; i++) {
         update_charge(g);
