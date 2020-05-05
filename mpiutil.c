@@ -68,10 +68,10 @@ zonedef_t *generate_zones(graph_t *g, int process_count) {
                 res[idx].width = g->width / num_col;
             }
 
-            res[idx].adj[0] = i > 0? (i - 1) * num_row + j : -1;
-            res[idx].adj[1] = j > 0? i * num_row + j - 1 : -1;
-            res[idx].adj[2] = j < num_col - 1? i * num_row + j + 1 : -1;
-            res[idx].adj[3] = i < num_row - 1? (i + 1) * num_row + j : -1;
+            res[idx].adj[0] = i > 0? (i - 1) * num_col + j : -1;
+            res[idx].adj[1] = j > 0? i * num_col + j - 1 : -1;
+            res[idx].adj[2] = j < num_col - 1? i * num_col + j + 1 : -1;
+            res[idx].adj[3] = i < num_row - 1? (i + 1) * num_col + j : -1;
         }
     }
 
