@@ -1,5 +1,7 @@
 light-seq
 light-openmp
 light-mpi
+light-cuda
 *.gif
+*.o
 /output

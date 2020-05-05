@@ -1,5 +1,6 @@
 DEBUG=0
 CC=gcc
+CPP=g++ -m64
 MPICC=mpicc
 NVCC=nvcc
 
@@ -20,7 +21,9 @@ CUDAFILES=sim-cuda.cu
 HFILES=graph.h sim.h instrument.h cycletimer.h
 MPIHFILES=graph.h sim-mpi.h instrument.h cycletimer.h mpiutil.h
 
-all: light-seq light-openmp light-mpi light-cuda
+TARGET=light-seq light-openmp light-mpi light-cuda
+
+all: $(TARGET)
 
 light-seq: $(SEQCFILES) $(HFILES)
 	$(CC) $(CFLAGS) -o $@ $(SEQCFILES) $(LDFLAGS)
@@ -32,7 +35,10 @@ light-mpi: $(MPICFILES) $(MPIHFILES)
 	$(MPICC) $(CFLAGS) $(MPI) -o $@ $(MPICFILES) $(LDFLAGS)
 
 light-cuda: $(CUDACFILES) $(HFILES) sim-cuda.o
-	$(CC) $(CFLAGS) -o $@ $(CUDACFILES) sim-cuda.o $(LDFLAGS)
+	$(CPP) $(CFLAGS) -o $@ $(CUDACFILES) sim-cuda.o $(LDFLAGS)
 
 sim-cuda.o: $(CUDAFILES)
 	$(NVCC) $(NVCCFLAGS) $(CUDAFILES) -c -o $@
+
+clean:
+	rm $(TARGET) *.o

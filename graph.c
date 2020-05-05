@@ -11,7 +11,7 @@
 
 // initialize buffer
 static graph_t *new_graph(int width, int height, int power, int eta) {
-    graph_t *g = malloc(sizeof(graph_t));
+    graph_t *g = (graph_t*)malloc(sizeof(graph_t));
     int nnode = width * height;
     if (g == NULL)
         return NULL;

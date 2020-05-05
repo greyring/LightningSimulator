@@ -7,7 +7,7 @@
 #include "instrument.h"
 
 static void usage(char *name) {
-    char *use_string = "-g GFILE [-n STEPS] [-s SEED] [-u (r|b|s)] [-q] [-I]";
+    const char *use_string = "-g GFILE [-n STEPS] [-s SEED] [-u (r|b|s)] [-q] [-I]";
     fprintf(stdout, "Usage: %s %s\n", name, use_string);
     fprintf(stdout, "   -h        Print this message\n");
     fprintf(stdout, "   -g GFILE  Graph file\n");
@@ -26,7 +26,7 @@ int main(int argc, char *argv[]) {
     bool instrument = false;
 
     char c;
-    char *optstring = "hg:o:n:s:I";
+    const char *optstring = "hg:o:n:s:I";
     while ((c = getopt(argc, argv, optstring)) != -1) {
         switch(c) {
         case 'h':
