@@ -248,9 +248,11 @@ void simulate(graph_t *g, int count, FILE *ofile) {
     int g_num_choice;
 
     // init graph
+    START_ACTIVITY(ACTIVITY_STARTUP);
     reset_bolt(g);
     reset_charge(g);
     reset_boundary(g);
+    FINISH_ACTIVITY(ACTIVITY_STARTUP);
 
     #pragma omp parallel
     {
@@ -262,6 +264,7 @@ void simulate(graph_t *g, int count, FILE *ofile) {
         for (i = 0; i < count; i++) {
             g_power = g->power;
             simulate_one(g, &g_power, &g_num_choice);
+            #pragma omp barrier
             #pragma omp master
             {
                 // print bolt
